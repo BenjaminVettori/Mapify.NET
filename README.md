@@ -1,215 +1,244 @@
-# Mapify
+﻿# Mapify.NET 🗺️
 
-Mapify provides utils to create static mapping expressions for c# objects.
-It builds mapping expressions using initializers and implicit mappings for properties with the same name and compatible types.
-If combined with [LINQKit](https://github.com/scottksmith95/LINQKit), they can be used to map objects with entity framework before they are loaded in-memory.
+Mapify is a lightweight .NET library for creating static mapping expressions for C# objects. It bridges the gap between in-memory object mapping and LINQ projections (e.g., Entity Framework), allowing you to reuse the same mapping logic consistently across your application.
 
-## Create a mapping
+## Features ✨
 
-Mapping expressions can be created with the ``Mapper.CreateMap<TSrc, TDest>()`` method.
-This method takes an optional lambda expression with a constructor and initializers.
+*   **Zero Boilerplate**: Automatically maps properties with compatible names and types.
+*   **Entity Framework Compatible**: Generates expression trees compatible with `IQueryable` projections.
+*   **Safe**: Handles null checks and type conversions automatically.
+*   **Flexible**: Supports explicit overrides and partial mappings.
+*   **Performance**: Caches compiled delegates for in-memory mapping.
 
+## Installation 📦
+
+Install via NuGet:
+
+```bash
+dotnet add package Mapify.NET
+```
+
+## Supported Frameworks 📋
+
+*   .NET 8.0, 9.0, 10.0
+*   .NET Standard 2.0, 2.1
+*   .NET Framework 4.6.2+
+
+## Getting Started 🚀
+
+### 1. Define your Classes
 
 ```csharp
-public static PersonMappings {
+public class Address {
+    public string Street { get; set; }
+    public string City { get; set; }
+}
 
+public class AddressDto {
+    public string Street { get; set; }
+    public string City { get; set; }
+}
+
+public class Person {
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public Address MainAddress { get; set; }
+    public ICollection<Address> Addresses { get; set; }
+}
+
+public class PersonDto {
+    public string Name { get; set; }
+    public AddressDto MainAddress { get; set; }
+    public ICollection<AddressDto> Addresses { get; set; }
+}
+```
+
+### 2. Create a Mapping
+
+To create a mapping, use `Mapper.CreateMap`. You can place these in a static class usage.
+
+```csharp
+using Mapify.NET;
+using System.Linq.Expressions;
+
+public static class PersonMappings {
+
+    // Create a generic map. Implicitly maps properties with matching names/types.
+    // Also explicitly maps "Name" from FirstName + LastName.
     public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
-        Mapper.CreateMap<Person, PersonDto>(person => new PersonDto {
-            Name = $"{person.FirstName} {person.LastName}"
+        Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
+            Name = $"{p.FirstName} {p.LastName}",
+             // Invoke allows using other maps inside this expression (requires LINQKit)
+            Address = AddressMappings.AddressToAddressDto.Invoke(p.Address)
         });
 }
-```
 
-## Implicit mappings
-
-Properties in the destination type which have the same name as a property in the source type are mapped with the following rules:
-
-* The destination type must be assignable from the source type
-* If the source type is nullable, the underlying type must be assignable to the destination type
-* The default value of an underlying type is used as fallback if the source value is null and the destination type is not nullable
-* Coalesce operators (??) in the initializer are converted to ternary operators by the mapper.
-
-Thus, creating a mapping can be as simple as the following, if all types are compatible
-
-```csharp
-public static PersonMappings {
-
-    public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
-        Mapper.CreateMap<Person, PersonDto>();
+public static class AddressMappings {
+     public static readonly Expression<Func<Address, AddressDto>> AddressToAddressDto =
+        Mapper.CreateMap<Address, AddressDto>();
 }
 ```
 
-## Using a mapping in-memory
+### 3. Use with Entity Framework (IQueryable + LinqKit)
 
-To use a static mapping expression, use the ``Invoke`` method of Linqkit
+Mapify produces standard Expression Trees, so you can use them directly in LINQ queries.
+If you use nested lookups (like `.Invoke`), you should combine it with [LINQKit](https://github.com/scottksmith95/LINQKit) to expand the expressions.
+Otherwise you will run into issues with EF not being able to translate the invoked expressions.
+Take a look at the LINQKit documentation for more details, but the basic usage is to add `.AsExpandable()` to your query before using the mapping expressions
+and then use `.Invoke()` in your mapping expressions to call other maps.
 
-```csharp
-public PersonDto GetPersonDto(long id) {
-    var person = LoadPerson(id); // e.g. from DB
-
-    // There are two extension methods that can be used to map in-memory.
-    // 1. Map to a new Object
-    var personDto = PersonMappings.PersonToPersonDto.Map(person);
-
-    // 2. Map to an existing Object
-    // This will build an action with assignment expressions for each initializer binding.
-    // Then it will call the action with the given objects.
-    // The action will be compiled on the first call and then cached in a static dictionary afterwards.
-    var personDto = new PersonDto();
-    PersonMappings.PersonToPersonDto.Map(person, personDto);
-}
-```
-
-## Using a mapping with EntityFramework 
-
-With Linqkit it is possible to use static expressions in Queryable Select calls.
-Thus, it is possible to map Objects in the database and even perform paging or sorting after mapping
 
 ```csharp
 public IEnumerable<PersonDto> GetPersonDtos(int skip, int take) {
     return _dbContext.Persons
-        // see Linqkit (this allows the use of static expressions)
-        .AsExpandable() 
+        .AsExpandable()
         .Select(PersonMappings.PersonToPersonDto)
-        .OrderBy(x => x.Name) // order by PersonDto.Name
+        .OrderBy(x => x.Name)
         .Skip(skip)
         .Take(take)
         .ToArrayAsync();
 }
 ```
 
-## Static Map methods & Default Mappings
+#### Mapping Nested Objects & Collections (Entity Framework)
 
-There are static methods, which allow to configure mappings that are stored in a static dictionary
-
-```csharp
-// Allows to configure globally if default mappings are used for missing type mappings
-Mapper.UseDefaultMapIfTypeMapIsMissing(true / false);
-// Adds a new mapping for person to PersonDto
-Mapper.AddMap<Person, PersonDto>(Mapper.CreateMap<Person, PersonDto>(p => new PersonDto { ... }));
-// Or use the shortcut that calls AddMap and CreateMap internally
-Mapper.CreateAndAddMap<Person, PersonDto>(p => new PersonDto { ... });
-// Gets the mapping Expression for Person to PersonDto
-Mapper.GetMap<Person, PersonDto>();
-// Uses the default map created with Mapper.CreateMap if no mapping exists
-Mapper.GetMap<Person, PersonDto>(useDefaultMapIfTypeMapIsMissing: true);
-```
-
-These mappings can be used by static Map methods
+To map nested objects and collections, use standard LINQ methods combined with `.Invoke()` from LinqKit. This allows you to reuse existing mapping expressions deep in the object graph.
 
 ```csharp
-var person = new Person();
-// use a previously configured mapping for Person -> PersonDto
-Mapper.Map<Person, PersonDto>(person);
-// or use the default if there is no mapping.
-// the default mapping is also used if UseDefaultMapIfTypeMapIsMissing is set to true beforehand
-Mapper.Map<Person, PersonDto>(person, useDefaultMapIfTypeMapIsMissing: true);
+public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
+    Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
+        Name = $"{p.FirstName} {p.LastName}",
+        
+        // Map single child object
+        MainAddress = AddressMappings.AddressToAddressDto.Invoke(p.MainAddress),
 
-var dto = new PersonDto();
-// It is also possible to map to existing objects
-Mapper.Map(person, dto);
-// and to use a default mapping in this case
-Mapper.Map(person, dto, useDefaultMapIfTypeMapIsMissing: true);
-
-```
-
-## How it Works
-
-The ``CreateMap`` Method performs the following steps:
-
-* Build a list of initializer bindings from the partial mappings
-    * Replace x ?? y with x != null ? x : y
-* For all suitable properties with matching types
-    * Create a binding in the form Prop = x.Prop
-    * If one of the types is nullable, cast it or use the default value as fallback where necessary
-
-
-This allows to create mappings like
-
-```csharp
-public static PersonMappings {
-
-    public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
-        Mapper.CreateMap<Person, PersonDto>(person => {
-            FullName = $"{person.Name} {person.LastName}",
-            Address = AddressToAddressDto.Invoke(person.Address)
-        });
-
-    public static readonly Expression<Func<Address, AddressDto>> AddressToAddressDto =
-        Mapper.CreateMap<Address, AddressDto>();
-}
-```
-
-instead of
-
-```csharp
-public static PersonMappings {
-
-    public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto = person => {
-        Name = person.Name,
-        LastName = person.LastName,
-        FullName = $"{person.Name} {person.LastName}",
-        BirthDate = person.BirthDate,
-        Address = AddressToAddressDto.Invoke(person.Address)
+        // Map child collection
+        Addresses = p.Addresses
+            .Select(a => AddressMappings.AddressToAddressDto.Invoke(a))
+            .ToList()
     });
+```
+
+> **Note:** For this to work in EF, the main query must use `.AsExpandable()` as shown in the previous section.
+
+### 4. Use In-Memory
+
+You can also use the same expressions to map objects in memory using the `.Map()` extension method.
+
+```csharp
+var person = new Person { FirstName = "John", LastName = "Doe" };
+
+// 1. Map to a new Object
+PersonDto dto = PersonMappings.PersonToPersonDto.Map(person);
+
+// 2. Map to an existing Object
+var existingDto = new PersonDto();
+PersonMappings.PersonToPersonDto.Map(person, existingDto);
+
+// 3. Map a Collection
+var persons = new List<Person>();
+var dtos = persons.Select(p => PersonMappings.PersonToPersonDto.Map(p)).ToList();
+```
+
+## Detailed Functionality 📚
+
+### Implicit Mappings
+
+When `CreateMap<TSource, TTarget>()` is called, Mapify automatically generates bindings for properties where:
+1.  **Names Match**: Source and Destination property names are identical.
+2.  **Types are Compatible**:
+    *   Exact match.
+    *   Target is assignable from Source.
+    *   **Nullable Handling**:
+        *   `T` -> `T?` (Implicit cast)
+        *   `T?` -> `T` (Uses source value if not null, otherwise default(T))
+
+### Global Configuration & Static Maps
+
+You can register mappings globally to use the static `Mapper.Map` convenience methods.
+
+```csharp
+// Register a map globally
+Mapper.AddMap(PersonMappings.PersonToPersonDto);
+
+// Or create and add in one step
+Mapper.CreateAndAddMap<Person, PersonDto>(p => new PersonDto { ... });
+
+// Use the global map anywhere
+var dto = Mapper.Map<Person, PersonDto>(person);
+```
+
+### Explicit Overrides & Coalescing
+
+You can provide a partial initializer to override specific properties. Mapify also rewrites null-coalescing operators (`??`) to conditional expressions (`x != null ? x : y`) to ensure compatibility with all LINQ providers (some EF versions struggle with `??`).
+
+```csharp
+Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
+    // Explicit override
+    Name = p.FirstName + " " + p.LastName,
     
-    public static readonly Expression<Func<Address, AddressDto>> AddressToAddressDto = address => new AddressDto {
-        Street = address.StreetNumber
-        StreetNumber = address.StreetNumber,
-        Zip = address.Zip,
-        City = address.City
-    };
+    // Coalescing is rewritten for EF compatibility
+    Region = p.Region ?? "Unknown" 
+});
+```
+
+## Caching & Performance ⚡
+
+*   **Compiled Delegates**: Accessors are compiled to delegates.
+*   **Strategy**:
+    *   **Extension Method (`.Map()`)**: Caches the compiled delegate for that specific expression instance.
+    *   **Static `Mapper.Map`**: Uses a global cache.
+        *   **Priority**: Explicitly added maps (`AddMap`) take precedence over implicitly generated ones.
+        *   **Auto-Cache**: If you use `Mapper.Map` with `useDefaultMapIfTypeMapIsMissing: true` *before* adding a custom map, a default map is generated and cached. However, calling `AddMap` later **will overwrite** this cache with your custom definition, so you can safely upgrade from default to custom maps at runtime.
+
+## Advanced Usage 🛠️
+
+For advanced scenarios, Mapify exposes several lower-level methods.
+
+### Compiling Mappers Manually
+
+If you need high-performance bulk mapping to **existing** objects and want to manage the delegate lifecycle yourself (referencing `Action<TSource, TTarget>`), you can use `CompileMapper`.
+
+```csharp
+// Get the map expression
+var mapExpr = PersonMappings.PersonToPersonDto;
+
+// Compile to an Action<Person, PersonDto>
+Action<Person, PersonDto> mapAction = Mapper.CompileMapper(mapExpr);
+
+// Use it in a hot loop (zero dictionary lookups)
+var target = new PersonDto();
+foreach (var item in largeCollection) {
+    mapAction(item, target);
+    // ...
 }
 ```
 
-## Limitations
+### Retrieving Maps
 
-### Caching
+You can retrieve registered maps using `GetMap`. This is useful in generic or dynamic contexts where you don't have direct access to the static field.
 
-For performance reasons, Maps are cached in static dictionaries after their first usage.
-This means if ``GetMap<TSource, TTarget>(true)`` is used before any map is added, or if the global setting to use default maps for missing mapping configurations is enabled,
-then the default map is cached and no other mapping can be used.
-
-**Wrong**:
 ```csharp
-// this will cache the default map for Person -> PersonDto
-var x = Mapper.Map<Person, PersonDto>(person, true);
+// Retrieve a registered map
+var mapExpr = Mapper.GetMap<Person, PersonDto>();
 
-// this might work if no map was added before, but it will not be used anmyore
-// since GetMap<Person, PersonDto> already cached the default map
-Mapper.CreateAndAddMap<Person, PersonDto>(x => new PersonDto { ... });
+// Or retrieve with fallback to default map generation
+var mapExpr = Mapper.GetMap<Person, PersonDto>(useDefaultMapIfTypeMapIsMissing: true);
 ```
 
-**Right**:
+### Strict Mode Configuration
+
+By default, strict mode is **enabled** for global maps, meaning `Mapper.Map<S, T>(src)` throws if no map is registered. You can disable this to allow automatic fallback to default maps globally, though explicit registration is recommended for performance and control.
+
 ```csharp
-
-// this might work if no map was added before, but it will not be used anmyore
-// since GetMap<Person, PersonDto> already cached the default map
-Mapper.CreateAndAddMap<Person, PersonDto>(x => new PersonDto { ... });
-
-// this will cache the compiled map for Person -> PersonDto which was added before
-var x = Mapper.Map<Person, PersonDto>(person, true);
+// Allow implicit generation of default maps if no custom map is found
+Mapper.UseDefaultMapIfTypeMapIsMissing(true);
 ```
 
-The map extensions on expressions will only cache the compiled map of that expression though.
+## Contributing 🤝
 
-**Right**:
-```csharp
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-// this might work if no map was added before, but it will not be used anmyore
-// since GetMap<Person, PersonDto> already cached the default map
-public static Expression<Func<Person, PersonDto>> PersonMap = Mapper.CreateMap<Person, PersonDto>(x => new PersonDto { ... });
+## License 📄
 
-...
-
-// this will cache the compiled map for Person -> PersonDto which was added before
-var x = PersonMap.Map(person);
-
-```
-
-However, do not use inline expressions, as they would 
-
-
-* Inheritance
-* Sorting with inheritance
-* etc (TBD)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
