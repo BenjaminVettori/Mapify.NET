@@ -15,6 +15,18 @@ namespace Mapify.NET {
         }
 
         /// <summary>
+        /// Clears all mappings and compiled delegates.
+        /// </summary>
+        public static void ClearMappings() {
+            Converters.Clear();
+            DefaultMapCache.Clear();
+            CompiledMapToExistingCache.Clear();
+            CompiledMapToNewCache.Clear();
+            CompiledSpecificMapToExistingCache.Clear();
+            CompiledSpecificMapToNewCache.Clear();
+        }
+
+        /// <summary>
         /// Stores converters added with <see cref="AddMap{TSource, TTarget}(Expression{Func{TSource, TTarget}})"/> which are then returned by <see cref="GetMap{TSource, TTarget}(bool)"/>
         /// </summary>
         private static IDictionary<Tuple<Type, Type>, LambdaExpression> Converters = new Dictionary<Tuple<Type, Type>, LambdaExpression>();
@@ -75,7 +87,7 @@ namespace Mapify.NET {
             var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (Converters.TryGetValue(key, out var existingConverter)) {
                 return (Expression<Func<TSource, TTarget>>)existingConverter;
-            } else if (!useDefaultMapIfTypeMapIsMissing && GlobalUseDefaultMapIfTypeMapIsMissing || useDefaultMapIfTypeMapIsMissing) {
+            } else if ((!useDefaultMapIfTypeMapIsMissing && GlobalUseDefaultMapIfTypeMapIsMissing) || useDefaultMapIfTypeMapIsMissing) {
                 if (DefaultMapCache.TryGetValue(key, out var map)) {
                     return (Expression<Func<TSource, TTarget>>)map;
                 }
@@ -98,6 +110,7 @@ namespace Mapify.NET {
         public static void Map<TSource, TTarget>(this Expression<Func<TSource, TTarget>> expression, TSource source, TTarget target, bool cache = false) {
             if (CompiledSpecificMapToExistingCache.TryGetValue(expression, out var map)) {
                 ((Action<TSource, TTarget>)map).Invoke(source, target);
+                return;
             }
             var compiled = CompileMapper(expression);
             if (cache) {
@@ -114,9 +127,10 @@ namespace Mapify.NET {
         /// <param name="useDefaultMapIfTypeMapIsMissing">If true, a default map will be used if none was added with <see cref="AddMap{TSource, TTarget}(Expression{Func{TSource, TTarget}})"> beforehand.</param>
         /// <returns>A new object of type <see cref="TTarget"/> with the mapped values</returns>
         public static void Map<TSource, TTarget>(TSource source, TTarget target, bool useDefaultMapIfTypeMapIsMissing = false) {
-            var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
+            var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));            
             if (CompiledMapToExistingCache.TryGetValue(key, out var map)) {
                 ((Action<TSource, TTarget>)map).Invoke(source, target);
+                return;
             }
             var expression = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
             var compiled = CompileMapper(expression);
@@ -158,6 +172,7 @@ namespace Mapify.NET {
             if (CompiledMapToNewCache.TryGetValue(key, out var map)) {
                 return ((Func<TSource, TTarget>)map).Invoke(source);
             }
+
             var expression = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
             var compiled = expression.Compile();
             CompiledMapToNewCache[key] = compiled;

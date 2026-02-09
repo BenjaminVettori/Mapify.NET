@@ -5,6 +5,8 @@ VisualStudioVersion = 18.2.11415.280
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mapify.NET", "Mapify\Mapify.NET.csproj", "{03EE3E7D-9F77-49C7-8263-7A65478F0217}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mapify.NET.Tests", "Mapify.NET.Tests\Mapify.NET.Tests.csproj", "{795138E5-9BFC-4AE8-B7D8-01C36C22E30E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{03EE3E7D-9F77-49C7-8263-7A65478F0217}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{03EE3E7D-9F77-49C7-8263-7A65478F0217}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{03EE3E7D-9F77-49C7-8263-7A65478F0217}.Release|Any CPU.Build.0 = Release|Any CPU
+		{795138E5-9BFC-4AE8-B7D8-01C36C22E30E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{795138E5-9BFC-4AE8-B7D8-01C36C22E30E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{795138E5-9BFC-4AE8-B7D8-01C36C22E30E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{795138E5-9BFC-4AE8-B7D8-01C36C22E30E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
