@@ -1,4 +1,4 @@
-﻿# Mapify.NET 🗺️
+﻿# Mapify.NET
 
 Mapify is a lightweight .NET library for creating static mapping expressions for C# objects. It bridges the gap between in-memory object mapping and LINQ projections (e.g., Entity Framework), allowing you to reuse the same mapping logic consistently across your application.
 
