@@ -233,6 +233,20 @@ Mapper.CreateAndAddMap<Person, PersonDto>(p => new PersonDto { ... });
 var dto = Mapper.Map<Person, PersonDto>(person);
 ```
 
+### Value Mappings (non-initializer)
+
+Mapify also supports mappings where the expression returns a value directly (not `new TTarget { ... }`).
+
+```csharp
+Mapper.AddMap<Person, string>(x => x.FirstName);
+Mapper.AddMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
+
+var name = Mapper.Map<Person, string>(person);
+var status = Mapper.Map<SourceStatus, TargetStatus>(SourceStatus.Active);
+```
+
+> Note: value mappings are supported for `Map(source)` only. `Map(source, target)` requires an object-initializer mapping.
+
 ### Explicit Overrides & Coalescing
 
 You can provide a partial initializer to override specific properties. Mapify also rewrites null-coalescing operators (`??`) to conditional expressions (`x != null ? x : y`) to ensure compatibility with all LINQ providers (some EF versions struggle with `??`).
@@ -282,13 +296,18 @@ foreach (var item in largeCollection) {
 ### Retrieving Maps
 
 You can retrieve registered maps using `GetMap`. This is useful in generic or dynamic contexts where you don't have direct access to the static field.
+`GetMap` returns `null` if no map exists and default-map fallback is disabled.
+If you want throwing behavior, use `GetRequiredMap`.
 
 ```csharp
-// Retrieve a registered map
+// Retrieve a registered map (or null)
 var mapExpr = Mapper.GetMap<Person, PersonDto>();
 
 // Or retrieve with fallback to default map generation
-var mapExpr = Mapper.GetMap<Person, PersonDto>(useDefaultMapIfTypeMapIsMissing: true);
+var fallbackMapExpr = Mapper.GetMap<Person, PersonDto>(useDefaultMapIfTypeMapIsMissing: true);
+
+// Throw if the map is missing
+var requiredMapExpr = Mapper.GetRequiredMap<Person, PersonDto>();
 ```
 
 ### Strict Mode Configuration

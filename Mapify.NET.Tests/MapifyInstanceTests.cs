@@ -26,6 +26,20 @@ namespace Mapify.NET.Tests {
             public string ValueB { get; set; } = string.Empty;
         }
 
+        private class NameSource {
+            public string Name { get; set; } = string.Empty;
+        }
+
+        private enum SourceStatus {
+            Inactive = 0,
+            Active = 1
+        }
+
+        private enum TargetStatus {
+            Disabled = 0,
+            Enabled = 1
+        }
+
         private class ProfileA : MapifyProfile {
             protected override void Configure() {
                 CreateMap<SourceA, TargetA>();
@@ -35,6 +49,13 @@ namespace Mapify.NET.Tests {
         private class ProfileB : MapifyProfile {
             protected override void Configure() {
                 CreateMap<SourceB, TargetB>();
+            }
+        }
+
+        private class ValueMapProfile : MapifyProfile {
+            protected override void Configure() {
+                AddMap<NameSource, string>(x => x.Name);
+                AddMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
             }
         }
 
@@ -83,6 +104,26 @@ namespace Mapify.NET.Tests {
             Assert.Equal(3, result.ValueA);
 
             Assert.Throws<ArgumentException>(() => mapify2.Map<SourceA, TargetA>(new SourceA { ValueA = 3 }));
+        }
+
+        [Fact]
+        public void Map_ShouldSupportValueMappingsFromProfiles() {
+            var mapify = new Mapify(new ValueMapProfile());
+
+            var mappedName = mapify.Map<NameSource, string>(new NameSource { Name = "Mapify" });
+            var mappedEnum = mapify.Map<SourceStatus, TargetStatus>(SourceStatus.Active);
+
+            Assert.Equal("Mapify", mappedName);
+            Assert.Equal(TargetStatus.Enabled, mappedEnum);
+        }
+
+        [Fact]
+        public void Map_ToExisting_ShouldThrowForValueMappingInInstanceMapper() {
+            var mapify = new Mapify(new ValueMapProfile());
+            var source = new NameSource { Name = "Mapify" };
+            var target = string.Empty;
+
+            Assert.Throws<NotSupportedException>(() => mapify.Map(source, target));
         }
     }
 }

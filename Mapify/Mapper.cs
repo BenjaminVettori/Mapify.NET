@@ -62,8 +62,11 @@ namespace Mapify.NET {
         /// <typeparam name="TSource"></typeparam>
         /// <typeparam name="TTarget"></typeparam>
         /// <param name="partial">A lambda expression where the body is a initializer (x => new TTarget { ... })</param>
-        public static void CreateAndAddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null) {
-            AddMap(CreateMap(partial));
+        /// <returns>The created mapping expression.</returns>
+        public static Expression<Func<TSource, TTarget>> CreateAndAddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null) {
+            var map = CreateMap(partial);
+            AddMap(map);
+            return map;
         }
 
         /// <summary>
@@ -80,10 +83,16 @@ namespace Mapify.NET {
             }
             Converters[key] = mappingExpression;
             CompiledMapToNewCache[key] = mappingExpression.Compile();
-            CompiledMapToExistingCache[key] = CompileMapper(mappingExpression);
+
+            // Map-to-existing is only valid for member initializer expressions
+            // (x => new TTarget { ... }). Value mappings (e.g. enum->enum, object->string)
+            // are supported for Map(source) but not for Map(source, target).
+            if (mappingExpression.Body is MemberInitExpression) {
+                CompiledMapToExistingCache[key] = CompileMapper(mappingExpression);
+            }
         }
 
-        public static Expression<Func<TSource, TTarget>> GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
+        public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
             var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (Converters.TryGetValue(key, out var existingConverter)) {
                 return (Expression<Func<TSource, TTarget>>)existingConverter;
@@ -95,6 +104,15 @@ namespace Mapify.NET {
                 DefaultMapCache[key] = defaultMap;
                 return defaultMap;
             }
+            return null;
+        }
+
+        public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
+            var map = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+            if (map != null) {
+                return map;
+            }
+
             throw new ArgumentException($"Missing type map configuration for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
         }
 
@@ -132,7 +150,12 @@ namespace Mapify.NET {
                 ((Action<TSource, TTarget>)map).Invoke(source, target);
                 return;
             }
-            var expression = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+            var expression = GetRequiredMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+
+            if (expression.Body is not MemberInitExpression) {
+                throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
+            }
+
             var compiled = CompileMapper(expression);
             CompiledMapToExistingCache[key] = compiled;
             compiled.Invoke(source, target);
@@ -173,7 +196,7 @@ namespace Mapify.NET {
                 return ((Func<TSource, TTarget>)map).Invoke(source);
             }
 
-            var expression = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+            var expression = GetRequiredMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
             var compiled = expression.Compile();
             CompiledMapToNewCache[key] = compiled;
             return compiled.Invoke(source);

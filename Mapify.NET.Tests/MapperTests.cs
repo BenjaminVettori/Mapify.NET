@@ -216,11 +216,12 @@ namespace Mapify.NET.Tests
              
              // Act
              // Partial map for Name, expected Id to be automapped
-             Mapper.CreateAndAddMap<C1, D1>(s => new D1 { Name = s.Name + "_" });
+               var createdMap = Mapper.CreateAndAddMap<C1, D1>(s => new D1 { Name = s.Name + "_" });
              
              var target = Mapper.Map<C1, D1>(source);
 
              // Assert
+               Assert.NotNull(createdMap);
              Assert.Equal(1, target.Id);
              Assert.Equal("Test_", target.Name);
         }
@@ -234,12 +235,35 @@ namespace Mapify.NET.Tests
             
             // Act
             var expr = Mapper.GetMap<A2, B2>(useDefaultMapIfTypeMapIsMissing: true);
-            var func = expr.Compile();
+            Assert.NotNull(expr);
+            var func = expr!.Compile();
             var target = func(source);
             
             // Assert
-            Assert.NotNull(expr);
             Assert.Equal(10, target.Prop);
+        }
+
+        [Fact]
+        public void GetMap_ShouldReturnNull_WhenMapMissingAndDefaultDisabled()
+        {
+            // Arrange
+            Mapper.UseDefaultMapIfTypeMapIsMissing(false);
+
+            // Act
+            var expr = Mapper.GetMap<A4, B4>();
+
+            // Assert
+            Assert.Null(expr);
+        }
+
+        [Fact]
+        public void GetRequiredMap_ShouldThrow_WhenMapMissingAndDefaultDisabled()
+        {
+            // Arrange
+            Mapper.UseDefaultMapIfTypeMapIsMissing(false);
+
+            // Act / Assert
+            Assert.Throws<ArgumentException>(() => Mapper.GetRequiredMap<A4, B4>());
         }
 
         [Fact]
@@ -258,6 +282,44 @@ namespace Mapify.NET.Tests
             Assert.Equal(50, target.Prop);
         }
 
+        [Fact]
+        public void Map_ShouldSupportEnumToEnumValueMapping()
+        {
+            // Arrange
+            Mapper.AddMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
+
+            // Act
+            var result = Mapper.Map<SourceStatus, TargetStatus>(SourceStatus.Active);
+
+            // Assert
+            Assert.Equal(TargetStatus.Enabled, result);
+        }
+
+        [Fact]
+        public void Map_ShouldSupportObjectToStringValueMapping()
+        {
+            // Arrange
+            Mapper.AddMap<PersonNameSource, string>(x => x.Name);
+
+            // Act
+            var result = Mapper.Map<PersonNameSource, string>(new PersonNameSource { Name = "Mapify" });
+
+            // Assert
+            Assert.Equal("Mapify", result);
+        }
+
+        [Fact]
+        public void Map_ToExisting_ShouldThrowForValueMapping()
+        {
+            // Arrange
+            Mapper.AddMap<PersonNameSource, string>(x => x.Name);
+            var source = new PersonNameSource { Name = "Mapify" };
+            var target = string.Empty;
+
+            // Act / Assert
+            Assert.Throws<NotSupportedException>(() => Mapper.Map(source, target));
+        }
+
         public class C1 { public int Id { get; set; } public string Name { get; set; } }
         public class D1 { public int Id { get; set; } public string Name { get; set; } }
 
@@ -272,5 +334,10 @@ namespace Mapify.NET.Tests
 
         public class A4 { public int Prop { get; set; } }
         public class B4 { public int Prop { get; set; } }
+
+        public class PersonNameSource { public string Name { get; set; } = string.Empty; }
+
+        public enum SourceStatus { Inactive = 0, Active = 1 }
+        public enum TargetStatus { Disabled = 0, Enabled = 1 }
     }
 }

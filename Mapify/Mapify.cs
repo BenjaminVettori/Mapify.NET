@@ -46,7 +46,10 @@ namespace Mapify.NET {
 
             _converters[key] = mappingExpression;
             _compiledMapToNewCache[key] = mappingExpression.Compile();
-            _compiledMapToExistingCache[key] = Mapper.CompileMapper(mappingExpression);
+
+            if (mappingExpression.Body is MemberInitExpression) {
+                _compiledMapToExistingCache[key] = Mapper.CompileMapper(mappingExpression);
+            }
         }
 
         private Expression<Func<TSource, TTarget>> GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
@@ -76,6 +79,11 @@ namespace Mapify.NET {
             }
 
             var expression = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+
+            if (expression.Body is not MemberInitExpression) {
+                throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
+            }
+
             var compiled = Mapper.CompileMapper(expression);
             _compiledMapToExistingCache[key] = compiled;
             compiled.Invoke(source, target);
