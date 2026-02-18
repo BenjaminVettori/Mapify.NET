@@ -163,6 +163,48 @@ var persons = new List<Person>();
 var dtos = persons.Select(p => PersonMappings.PersonToPersonDto.Map(p)).ToList();
 ```
 
+### 5. Register Instance Mapper with DI
+
+Mapify also provides an instance-based mapper (`IMapify`) that can be configured via profiles and registered with DI.
+
+```csharp
+using Mapify.NET;
+using Microsoft.Extensions.DependencyInjection;
+
+public class PersonProfile : MapifyProfile {
+    protected override void Configure() {
+        CreateMap<Person, PersonDto>();
+    }
+}
+
+var services = new ServiceCollection();
+
+// Scans the given assemblies for all IMapifyProfile implementations,
+// registers them, and registers IMapify as singleton.
+services.AddMapify(typeof(PersonProfile).Assembly);
+
+// Scans the given assemblies for all IMapifyProfile implementations,
+// registers them, and registers IMapify as Scoped.
+services.AddMapify(ServiceLifetime.Scoped, typeof(PersonProfile).Assembly);
+
+// Manually add profiles of the given assembly
+// registers IMapify as Scoped without adding profiles
+services.AddMapifyProfiles(typeof(PersonProfile).Assembly)
+services.AddMapify(ServiceLifetime.Scoped);
+
+// Register a specific profile manually
+services.AddMapifyProfile<PersonProfile>();
+services.AddMapify(ServiceLifetime.Scoped);
+
+// Named mapper with isolated profile set
+services.AddMapifyProfile<PersonProfile>("queries");
+services.AddMapifyNamed("queries", ServiceLifetime.Transient);
+
+var provider = services.BuildServiceProvider();
+var defaultMapper = provider.GetRequiredService<IMapify>();
+var queryMapper = provider.GetMapify("queries");
+```
+
 ## Detailed Functionality 📚
 
 ### Implicit Mappings
