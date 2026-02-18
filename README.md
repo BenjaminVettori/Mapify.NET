@@ -87,18 +87,41 @@ Otherwise you will run into issues with EF not being able to translate the invok
 Take a look at the LINQKit documentation for more details, but the basic usage is to add `.AsExpandable()` to your query before using the mapping expressions
 and then use `.Invoke()` in your mapping expressions to call other maps.
 
-
 ```csharp
-public IEnumerable<PersonDto> GetPersonDtos(int skip, int take) {
-    return _dbContext.Persons
+public async Task<IEnumerable<PersonDto>> GetPersonDtosAsync(int skip, int take, CancellationToken cancellationToken = default) {
+    return await _dbContext.Persons
         .AsExpandable()
         .Select(PersonMappings.PersonToPersonDto)
         .OrderBy(x => x.Name)
         .Skip(skip)
         .Take(take)
-        .ToArrayAsync();
+        .ToArrayAsync(cancellationToken);
 }
 ```
+
+#### LINQKit package selection by .NET / EF version
+
+`AsExpandable()` is the key piece that lets EF translate expressions that use `.Invoke()`. Without it, invoked expressions often fail translation at runtime.
+
+Use the package that matches your scenario:
+
+- `LinqKit.Core`: use when you need expression composition utilities (`PredicateBuilder`, `Invoke`, `Expand`) without EF-specific integration.
+- `LinqKit` or `LinqKit.EntityFramework`: use for Entity Framework 6.x projects.
+- `LinqKit.Microsoft.EntityFrameworkCore`: use for Entity Framework Core projects.
+
+For EF Core, the **package ID stays the same** (`LinqKit.Microsoft.EntityFrameworkCore`), but you must install the version that matches your EF Core major:
+
+| App target | EF stack | NuGet package ID | NuGet version major |
+|---|---|---|---|
+| .NET Framework 4.6.2+ | Entity Framework 6.x | `LinqKit` or `LinqKit.EntityFramework` | latest compatible |
+| .NET 8 | EF Core 8 | `LinqKit.Microsoft.EntityFrameworkCore` | 8.x |
+| .NET 8 / .NET 9 | EF Core 9 | `LinqKit.Microsoft.EntityFrameworkCore` | 9.x |
+| .NET 8 / .NET 9 / .NET 10 | EF Core 10 | `LinqKit.Microsoft.EntityFrameworkCore` | 10.x |
+
+> **Rule of thumb:** match LINQKit EF Core major version to your EF Core major version.
+>
+> **If Mapify is referenced from a class library (`netstandard2.0` / `netstandard2.1`):** install the EF-specific LINQKit package in the **application project** that owns the `DbContext` and executes the query.
+
 
 #### Mapping Nested Objects & Collections (Entity Framework)
 
