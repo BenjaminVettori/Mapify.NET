@@ -30,6 +30,181 @@ namespace Mapify.NET.Tests {
             public string Name { get; set; } = string.Empty;
         }
 
+        private class ChildSource {
+            public int Number { get; set; }
+        }
+
+        private class ChildTarget {
+            public int Number { get; set; }
+        }
+
+        private class ParentSource {
+            public ChildSource Child { get; set; } = new ChildSource();
+        }
+
+        private class ParentTarget {
+            public ChildTarget Child { get; set; } = new ChildTarget();
+        }
+
+        private class MarkerChildSource {
+            public int Number { get; set; }
+        }
+
+        private class MarkerChildTarget {
+            public int Number { get; set; }
+        }
+
+        private class MarkerParentSource {
+            public MarkerChildSource Child { get; set; } = new MarkerChildSource();
+        }
+
+        private class MarkerParentTarget {
+            public MarkerChildTarget Child { get; set; } = new MarkerChildTarget();
+        }
+
+        private class LeafSource {
+            public int Number { get; set; }
+        }
+
+        private class LeafTarget {
+            public int Number { get; set; }
+        }
+
+        private class MiddleSource {
+            public LeafSource Leaf { get; set; } = new LeafSource();
+        }
+
+        private class MiddleTarget {
+            public LeafTarget Leaf { get; set; } = new LeafTarget();
+        }
+
+        private class RootSource {
+            public MiddleSource Middle { get; set; } = new MiddleSource();
+        }
+
+        private class RootTarget {
+            public MiddleTarget Middle { get; set; } = new MiddleTarget();
+        }
+
+        private struct NumberSource {
+            public int Value { get; set; }
+        }
+
+        private struct NumberTarget {
+            public int Value { get; set; }
+        }
+
+        private class NumberContainerSrcToTarget {
+            public NumberSource Number { get; set; }
+        }
+
+        private class NumberContainerTarget {
+            public NumberTarget Number { get; set; }
+        }
+
+        private class NumberContainerSrcToNullableTarget {
+            public NumberSource Number { get; set; }
+        }
+
+        private class NumberContainerNullableTarget {
+            public NumberTarget? Number { get; set; }
+        }
+
+        private class NumberContainerNullableSrcToTarget {
+            public NumberSource? Number { get; set; }
+        }
+
+        private class NumberContainerNullableSrcToNullableTarget {
+            public NumberSource? Number { get; set; }
+        }
+
+        private class UseMapContainerSrcToTarget {
+            public NumberSource Number { get; set; }
+        }
+
+        private class UseMapContainerTarget {
+            public NumberTarget Number { get; set; }
+        }
+
+        private class UseMapContainerSrcToNullableTarget {
+            public NumberSource Number { get; set; }
+        }
+
+        private class UseMapContainerNullableTarget {
+            public NumberTarget? Number { get; set; }
+        }
+
+        private class UseMapContainerNullableSrcToTarget {
+            public NumberSource? Number { get; set; }
+        }
+
+        private class UseMapContainerNullableSrcToNullableTarget {
+            public NumberSource? Number { get; set; }
+        }
+
+        private class NumberContainerSrcPropToTarget {
+            public NumberSource SourceNumber { get; set; }
+        }
+
+        private class NumberContainerSrcPropToNullableTarget {
+            public NumberSource SourceNumber { get; set; }
+        }
+
+        private class NumberContainerNullableSrcPropToTarget {
+            public NumberSource? SourceNumber { get; set; }
+        }
+
+        private class NumberContainerNullableSrcPropToNullableTarget {
+            public NumberSource? SourceNumber { get; set; }
+        }
+
+        private class NumberContainerTargetNamed {
+            public NumberTarget Number { get; set; }
+        }
+
+        private class NumberContainerNullableTargetNamed {
+            public NumberTarget? Number { get; set; }
+        }
+
+        private class ElementSource {
+            public int Value { get; set; }
+        }
+
+        private class ElementTarget {
+            public int Value { get; set; }
+        }
+
+        private class CollectionUseMapSource {
+            public ElementSource[] ItemsArray { get; set; } = Array.Empty<ElementSource>();
+            public List<ElementSource> ItemsList { get; set; } = new List<ElementSource>();
+        }
+
+        private class CollectionUseMapTarget {
+            public ElementTarget[] ItemsArray { get; set; } = Array.Empty<ElementTarget>();
+            public List<ElementTarget> ItemsList { get; set; } = new List<ElementTarget>();
+            public IEnumerable<ElementTarget> ItemsEnumerable { get; set; } = Enumerable.Empty<ElementTarget>();
+            public ICollection<ElementTarget> ItemsCollection { get; set; } = new List<ElementTarget>();
+            public IList<ElementTarget> ItemsArrayAsList { get; set; } = new List<ElementTarget>();
+        }
+
+        private class ImplicitPrimitiveCollectionsSource {
+            public int[] Numbers { get; set; } = Array.Empty<int>();
+            public ICollection<string> Texts { get; set; } = new List<string>();
+        }
+
+        private class ImplicitPrimitiveCollectionsTarget {
+            public List<int> Numbers { get; set; } = new List<int>();
+            public string[] Texts { get; set; } = Array.Empty<string>();
+        }
+
+        private class ImplicitCollectionParentSource {
+            public ElementSource[] Items { get; set; } = Array.Empty<ElementSource>();
+        }
+
+        private class ImplicitCollectionParentTarget {
+            public ElementTarget[] Items { get; set; } = Array.Empty<ElementTarget>();
+        }
+
         private enum SourceStatus {
             Inactive = 0,
             Active = 1
@@ -56,6 +231,136 @@ namespace Mapify.NET.Tests {
             protected override void Configure() {
                 CreateMap<NameSource, string>(x => x.Name);
                 CreateMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
+            }
+        }
+
+        private class ParentProfile : MapifyProfile {
+            protected override void Configure() {
+                // No explicit initializer for Child -> should use ChildSource -> ChildTarget map implicitly.
+                CreateMap<ParentSource, ParentTarget>();
+            }
+        }
+
+        private class ChildProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ChildSource, ChildTarget>(x => new ChildTarget { Number = x.Number + 1 });
+            }
+        }
+
+        private class ParentProfileWithUseMapMarker : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<MarkerParentSource, MarkerParentTarget>(x => new MarkerParentTarget {
+                    Child = UseMap<MarkerChildSource, MarkerChildTarget>(x.Child)
+                });
+            }
+        }
+
+        private class MarkerChildProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<MarkerChildSource, MarkerChildTarget>(x => new MarkerChildTarget { Number = x.Number + 1 });
+            }
+        }
+
+        private class LeafProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<LeafSource, LeafTarget>(x => new LeafTarget { Number = x.Number + 1 });
+            }
+        }
+
+        private class MiddleProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<MiddleSource, MiddleTarget>();
+            }
+        }
+
+        private class RootProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<RootSource, RootTarget>();
+            }
+        }
+
+        private class NumberProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<NumberSource, NumberTarget>(x => new NumberTarget { Value = x.Value + 1 });
+            }
+        }
+
+        private class NumberContainerProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<NumberContainerSrcToTarget, NumberContainerTarget>();
+                CreateMap<NumberContainerSrcToNullableTarget, NumberContainerNullableTarget>();
+                CreateMap<NumberContainerNullableSrcToTarget, NumberContainerTarget>();
+                CreateMap<NumberContainerNullableSrcToNullableTarget, NumberContainerNullableTarget>();
+            }
+        }
+
+        private class NumberContainerUseMapProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<UseMapContainerSrcToTarget, UseMapContainerTarget>(x => new UseMapContainerTarget {
+                    Number = UseMap<NumberSource, NumberTarget>(x.Number)
+                });
+
+                CreateMap<UseMapContainerSrcToNullableTarget, UseMapContainerNullableTarget>(x => new UseMapContainerNullableTarget {
+                    Number = UseMap<NumberSource, NumberTarget>(x.Number)
+                });
+
+                CreateMap<UseMapContainerNullableSrcToTarget, UseMapContainerTarget>(x => new UseMapContainerTarget {
+                    Number = UseMap<NumberSource?, NumberTarget>(x.Number)
+                });
+
+                CreateMap<UseMapContainerNullableSrcToNullableTarget, UseMapContainerNullableTarget>(x => new UseMapContainerNullableTarget {
+                    Number = UseMap<NumberSource?, NumberTarget>(x.Number)
+                });
+            }
+        }
+
+        private class NumberContainerUseMapWithSourceArgProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<NumberContainerSrcPropToTarget, NumberContainerTargetNamed>(x => new NumberContainerTargetNamed {
+                    Number = UseMap<NumberSource, NumberTarget>(x.SourceNumber)
+                });
+
+                CreateMap<NumberContainerSrcPropToNullableTarget, NumberContainerNullableTargetNamed>(x => new NumberContainerNullableTargetNamed {
+                    Number = UseMap<NumberSource, NumberTarget>(x.SourceNumber)
+                });
+
+                CreateMap<NumberContainerNullableSrcPropToTarget, NumberContainerTargetNamed>(x => new NumberContainerTargetNamed {
+                    Number = UseMap<NumberSource?, NumberTarget>(x.SourceNumber)
+                });
+
+                CreateMap<NumberContainerNullableSrcPropToNullableTarget, NumberContainerNullableTargetNamed>(x => new NumberContainerNullableTargetNamed {
+                    Number = UseMap<NumberSource?, NumberTarget>(x.SourceNumber)
+                });
+            }
+        }
+
+        private class ElementProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ElementSource, ElementTarget>(x => new ElementTarget { Value = x.Value + 1 });
+            }
+        }
+
+        private class CollectionUseMapProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<CollectionUseMapSource, CollectionUseMapTarget>(x => new CollectionUseMapTarget {
+                    ItemsArray = UseMap<ElementSource[], ElementTarget[]>(x.ItemsArray),
+                    ItemsList = UseMap<List<ElementSource>, List<ElementTarget>>(x.ItemsList),
+                    ItemsEnumerable = UseMap<IEnumerable<ElementSource>, IEnumerable<ElementTarget>>(x.ItemsArray),
+                    ItemsCollection = UseMap<ICollection<ElementSource>, ICollection<ElementTarget>>(x.ItemsList),
+                    ItemsArrayAsList = UseMap<ICollection<ElementSource>, IList<ElementTarget>>(x.ItemsArray)
+                });
+            }
+        }
+
+        private class ImplicitPrimitiveCollectionsProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ImplicitPrimitiveCollectionsSource, ImplicitPrimitiveCollectionsTarget>();
+            }
+        }
+
+        private class ImplicitCollectionParentProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ImplicitCollectionParentSource, ImplicitCollectionParentTarget>();
             }
         }
 
@@ -124,6 +429,231 @@ namespace Mapify.NET.Tests {
             var target = string.Empty;
 
             Assert.Throws<NotSupportedException>(() => mapify.Map(source, target));
+        }
+
+        [Fact]
+        public void Map_ShouldUseExistingNestedMapImplicitly_WhenPropertyTypesDiffer() {
+            var mapify = new Mapify(new ChildProfile(), new ParentProfile());
+
+            var source = new ParentSource {
+                Child = new ChildSource { Number = 10 }
+            };
+
+            var mapped = mapify.Map<ParentSource, ParentTarget>(source);
+
+            Assert.NotNull(mapped.Child);
+            Assert.Equal(11, mapped.Child.Number);
+        }
+
+        [Fact]
+        public void Map_ShouldUseLateRegisteredNestedMapImplicitly_AfterBuild() {
+            // Parent profile is applied before Child profile on purpose.
+            var mapify = new Mapify(new ParentProfile(), new ChildProfile());
+
+            var source = new ParentSource {
+                Child = new ChildSource { Number = 41 }
+            };
+
+            var mapped = mapify.Map<ParentSource, ParentTarget>(source);
+
+            Assert.NotNull(mapped.Child);
+            Assert.Equal(42, mapped.Child.Number);
+        }
+
+        [Fact]
+        public void Map_ShouldLiftNonNullableMap_ForAllNullableVariants() {
+            var mapify = new Mapify(new NumberContainerProfile(), new NumberProfile());
+
+            var r1 = mapify.Map<NumberContainerSrcToTarget, NumberContainerTarget>(
+                new NumberContainerSrcToTarget { Number = new NumberSource { Value = 1 } }
+            );
+            var r2 = mapify.Map<NumberContainerSrcToNullableTarget, NumberContainerNullableTarget>(
+                new NumberContainerSrcToNullableTarget { Number = new NumberSource { Value = 2 } }
+            );
+            var r3Value = mapify.Map<NumberContainerNullableSrcToTarget, NumberContainerTarget>(
+                new NumberContainerNullableSrcToTarget { Number = new NumberSource { Value = 3 } }
+            );
+            var r3Null = mapify.Map<NumberContainerNullableSrcToTarget, NumberContainerTarget>(
+                new NumberContainerNullableSrcToTarget { Number = null }
+            );
+            var r4Value = mapify.Map<NumberContainerNullableSrcToNullableTarget, NumberContainerNullableTarget>(
+                new NumberContainerNullableSrcToNullableTarget { Number = new NumberSource { Value = 4 } }
+            );
+            var r4Null = mapify.Map<NumberContainerNullableSrcToNullableTarget, NumberContainerNullableTarget>(
+                new NumberContainerNullableSrcToNullableTarget { Number = null }
+            );
+
+            Assert.Equal(2, r1.Number.Value);
+            Assert.NotNull(r2.Number);
+            Assert.Equal(3, r2.Number!.Value.Value);
+
+            Assert.Equal(4, r3Value.Number.Value);
+            Assert.Equal(default(NumberTarget), r3Null.Number);
+
+            Assert.NotNull(r4Value.Number);
+            Assert.Equal(5, r4Value.Number!.Value.Value);
+            Assert.Null(r4Null.Number);
+        }
+
+        [Fact]
+        public void Map_ShouldBuildTransitiveDependencies_WhenProfilesAreUnordered() {
+            // Registration order is reverse dependency order: root -> middle -> leaf.
+            var mapify = new Mapify(new RootProfile(), new MiddleProfile(), new LeafProfile());
+
+            var source = new RootSource {
+                Middle = new MiddleSource {
+                    Leaf = new LeafSource { Number = 10 }
+                }
+            };
+
+            var mapped = mapify.Map<RootSource, RootTarget>(source);
+
+            Assert.NotNull(mapped.Middle);
+            Assert.NotNull(mapped.Middle.Leaf);
+            Assert.Equal(11, mapped.Middle.Leaf.Number);
+        }
+
+        [Fact]
+        public void Map_ShouldResolveUseMapMarker_WhenDependencyIsRegisteredLater() {
+            var mapify = new Mapify(new ParentProfileWithUseMapMarker(), new MarkerChildProfile());
+
+            var source = new MarkerParentSource {
+                Child = new MarkerChildSource { Number = 12 }
+            };
+
+            var mapped = mapify.Map<MarkerParentSource, MarkerParentTarget>(source);
+
+            Assert.NotNull(mapped.Child);
+            Assert.Equal(13, mapped.Child.Number);
+        }
+
+        [Fact]
+        public void Map_UseMapMarker_ShouldLiftNonNullableMap_ForAllNullableVariants() {
+            // Intentionally register container maps before the underlying Number map.
+            var mapify = new Mapify(new NumberContainerUseMapProfile(), new NumberProfile());
+
+            var r1 = mapify.Map<UseMapContainerSrcToTarget, UseMapContainerTarget>(
+                new UseMapContainerSrcToTarget { Number = new NumberSource { Value = 10 } }
+            );
+            var r2 = mapify.Map<UseMapContainerSrcToNullableTarget, UseMapContainerNullableTarget>(
+                new UseMapContainerSrcToNullableTarget { Number = new NumberSource { Value = 20 } }
+            );
+            var r3Value = mapify.Map<UseMapContainerNullableSrcToTarget, UseMapContainerTarget>(
+                new UseMapContainerNullableSrcToTarget { Number = new NumberSource { Value = 30 } }
+            );
+            var r3Null = mapify.Map<UseMapContainerNullableSrcToTarget, UseMapContainerTarget>(
+                new UseMapContainerNullableSrcToTarget { Number = null }
+            );
+            var r4Value = mapify.Map<UseMapContainerNullableSrcToNullableTarget, UseMapContainerNullableTarget>(
+                new UseMapContainerNullableSrcToNullableTarget { Number = new NumberSource { Value = 40 } }
+            );
+            var r4Null = mapify.Map<UseMapContainerNullableSrcToNullableTarget, UseMapContainerNullableTarget>(
+                new UseMapContainerNullableSrcToNullableTarget { Number = null }
+            );
+
+            Assert.Equal(11, r1.Number.Value);
+
+            Assert.NotNull(r2.Number);
+            Assert.Equal(21, r2.Number!.Value.Value);
+
+            Assert.Equal(31, r3Value.Number.Value);
+            Assert.Equal(default(NumberTarget), r3Null.Number);
+
+            Assert.NotNull(r4Value.Number);
+            Assert.Equal(41, r4Value.Number!.Value.Value);
+            Assert.Null(r4Null.Number);
+        }
+
+        [Fact]
+        public void Map_UseMapMarkerWithSourceArgument_ShouldLiftNonNullableMap_ForAllNullableVariants() {
+            // Intentionally register container maps before the underlying Number map.
+            var mapify = new Mapify(new NumberContainerUseMapWithSourceArgProfile(), new NumberProfile());
+
+            var r1 = mapify.Map<NumberContainerSrcPropToTarget, NumberContainerTargetNamed>(
+                new NumberContainerSrcPropToTarget { SourceNumber = new NumberSource { Value = 100 } }
+            );
+            var r2 = mapify.Map<NumberContainerSrcPropToNullableTarget, NumberContainerNullableTargetNamed>(
+                new NumberContainerSrcPropToNullableTarget { SourceNumber = new NumberSource { Value = 200 } }
+            );
+            var r3Value = mapify.Map<NumberContainerNullableSrcPropToTarget, NumberContainerTargetNamed>(
+                new NumberContainerNullableSrcPropToTarget { SourceNumber = new NumberSource { Value = 300 } }
+            );
+            var r3Null = mapify.Map<NumberContainerNullableSrcPropToTarget, NumberContainerTargetNamed>(
+                new NumberContainerNullableSrcPropToTarget { SourceNumber = null }
+            );
+            var r4Value = mapify.Map<NumberContainerNullableSrcPropToNullableTarget, NumberContainerNullableTargetNamed>(
+                new NumberContainerNullableSrcPropToNullableTarget { SourceNumber = new NumberSource { Value = 400 } }
+            );
+            var r4Null = mapify.Map<NumberContainerNullableSrcPropToNullableTarget, NumberContainerNullableTargetNamed>(
+                new NumberContainerNullableSrcPropToNullableTarget { SourceNumber = null }
+            );
+
+            Assert.Equal(101, r1.Number.Value);
+
+            Assert.NotNull(r2.Number);
+            Assert.Equal(201, r2.Number!.Value.Value);
+
+            Assert.Equal(301, r3Value.Number.Value);
+            Assert.Equal(default(NumberTarget), r3Null.Number);
+
+            Assert.NotNull(r4Value.Number);
+            Assert.Equal(401, r4Value.Number!.Value.Value);
+            Assert.Null(r4Null.Number);
+        }
+
+        [Fact]
+        public void Map_UseMapMarker_ShouldSupportArraysAndEnumerables_FromElementMap() {
+            var mapify = new Mapify(new CollectionUseMapProfile(), new ElementProfile());
+
+            var source = new CollectionUseMapSource {
+                ItemsArray = new[] {
+                    new ElementSource { Value = 1 },
+                    new ElementSource { Value = 2 }
+                },
+                ItemsList = new List<ElementSource> {
+                    new ElementSource { Value = 3 },
+                    new ElementSource { Value = 4 }
+                }
+            };
+
+            var mapped = mapify.Map<CollectionUseMapSource, CollectionUseMapTarget>(source);
+
+            Assert.Equal(new[] { 2, 3 }, mapped.ItemsArray.Select(x => x.Value).ToArray());
+            Assert.Equal(new[] { 4, 5 }, mapped.ItemsList.Select(x => x.Value).ToArray());
+            Assert.Equal(new[] { 2, 3 }, mapped.ItemsEnumerable.Select(x => x.Value).ToArray());
+            Assert.Equal(new[] { 4, 5 }, mapped.ItemsCollection.Select(x => x.Value).ToArray());
+            Assert.Equal(new[] { 2, 3 }, mapped.ItemsArrayAsList.Select(x => x.Value).ToArray());
+        }
+
+        [Fact]
+        public void Map_ShouldImplicitlyMapPrimitiveArraysAndCollections_WithoutUseMap() {
+            var mapify = new Mapify(new ImplicitPrimitiveCollectionsProfile());
+
+            var source = new ImplicitPrimitiveCollectionsSource {
+                Numbers = new[] { 1, 2, 3 },
+                Texts = new List<string> { "a", "b" }
+            };
+
+            var mapped = mapify.Map<ImplicitPrimitiveCollectionsSource, ImplicitPrimitiveCollectionsTarget>(source);
+
+            Assert.Equal(new[] { 1, 2, 3 }, mapped.Numbers);
+            Assert.Equal(new[] { "a", "b" }, mapped.Texts);
+        }
+
+        [Fact]
+        public void Map_ShouldImplicitlyUseExistingElementMap_ForArrayMembersWithoutUseMap() {
+            var mapify = new Mapify(new ImplicitCollectionParentProfile(), new ElementProfile());
+
+            var source = new ImplicitCollectionParentSource {
+                Items = new[] {
+                    new ElementSource { Value = 1 },
+                    new ElementSource { Value = 2 }
+                }
+            };
+
+            var mapped = mapify.Map<ImplicitCollectionParentSource, ImplicitCollectionParentTarget>(source);
+
+            Assert.Equal(new[] { 2, 3 }, mapped.Items.Select(x => x.Value).ToArray());
         }
     }
 }

@@ -320,6 +320,81 @@ namespace Mapify.NET.Tests
             Assert.Throws<NotSupportedException>(() => Mapper.Map(source, target));
         }
 
+        [Fact]
+        public void CreateMap_ShouldUseExistingNestedMapImplicitly_WhenPropertyTypesDiffer()
+        {
+            // Arrange
+            Mapper.AddMap<NestedSource, NestedTarget>(x => new NestedTarget { Value = x.Value + 1 });
+
+            // Act
+            var parentMap = Mapper.CreateMap<ParentWithNestedSource, ParentWithNestedTarget>();
+            var mapped = parentMap.Map(new ParentWithNestedSource {
+                Nested = new NestedSource { Value = 9 }
+            });
+
+            // Assert
+            Assert.NotNull(mapped.Nested);
+            Assert.Equal(10, mapped.Nested.Value);
+        }
+
+        [Fact]
+        public void CreateMap_ShouldLiftNonNullableMap_ForAllNullableVariants()
+        {
+            // Arrange: only register non-nullable map.
+            Mapper.AddMap<NumberSource, NumberTarget>(x => new NumberTarget { Value = x.Value + 1 });
+
+            var s1 = new ContainerSrcToTarget { Number = new NumberSource { Value = 1 } };
+            var s2 = new ContainerSrcToNullableTarget { Number = new NumberSource { Value = 2 } };
+            var s3WithValue = new ContainerNullableSrcToTarget { Number = new NumberSource { Value = 3 } };
+            var s3Null = new ContainerNullableSrcToTarget { Number = null };
+            var s4WithValue = new ContainerNullableSrcToNullableTarget { Number = new NumberSource { Value = 4 } };
+            var s4Null = new ContainerNullableSrcToNullableTarget { Number = null };
+
+            // Act
+            var m1 = Mapper.CreateMap<ContainerSrcToTarget, ContainerTarget>();
+            var m2 = Mapper.CreateMap<ContainerSrcToNullableTarget, ContainerNullableTarget>();
+            var m3 = Mapper.CreateMap<ContainerNullableSrcToTarget, ContainerTarget>();
+            var m4 = Mapper.CreateMap<ContainerNullableSrcToNullableTarget, ContainerNullableTarget>();
+
+            var r1 = m1.Map(s1);
+            var r2 = m2.Map(s2);
+            var r3WithValue = m3.Map(s3WithValue);
+            var r3Null = m3.Map(s3Null);
+            var r4WithValue = m4.Map(s4WithValue);
+            var r4Null = m4.Map(s4Null);
+
+            // Assert
+            Assert.Equal(2, r1.Number.Value);
+            Assert.NotNull(r2.Number);
+            Assert.Equal(3, r2.Number!.Value.Value);
+
+            Assert.Equal(4, r3WithValue.Number.Value);
+            Assert.Equal(default(NumberTarget), r3Null.Number);
+
+            Assert.NotNull(r4WithValue.Number);
+            Assert.Equal(5, r4WithValue.Number!.Value.Value);
+            Assert.Null(r4Null.Number);
+        }
+
+        [Fact]
+        public void CreateMap_NullableComplexStructToNonNullableSameType_ShouldUseExistingMapWhenPresent()
+        {
+            // Arrange
+            Mapper.AddMap<ComplexValue, ComplexValue>(x => new ComplexValue { Value = x.Value + 1 });
+
+            var withValue = new ComplexValueContainerSource { Item = new ComplexValue { Value = 10 } };
+            var withNull = new ComplexValueContainerSource { Item = null };
+
+            // Act
+            var map = Mapper.CreateMap<ComplexValueContainerSource, ComplexValueContainerTarget>();
+            var mappedWithValue = map.Map(withValue);
+            var mappedWithNull = map.Map(withNull);
+
+            // Assert
+            Assert.Equal(11, mappedWithValue.Item.Value);
+            Assert.Equal(default(ComplexValue), mappedWithNull.Item);
+        }
+
         public class C1 { public int Id { get; set; } public string Name { get; set; } }
         public class D1 { public int Id { get; set; } public string Name { get; set; } }
 
@@ -334,6 +409,28 @@ namespace Mapify.NET.Tests
 
         public class A4 { public int Prop { get; set; } }
         public class B4 { public int Prop { get; set; } }
+
+        public class NestedSource { public int Value { get; set; } }
+        public class NestedTarget { public int Value { get; set; } }
+
+        public class ParentWithNestedSource { public NestedSource Nested { get; set; } = new NestedSource(); }
+        public class ParentWithNestedTarget { public NestedTarget Nested { get; set; } = new NestedTarget(); }
+
+        public struct NumberSource { public int Value { get; set; } }
+        public struct NumberTarget { public int Value { get; set; } }
+
+        public class ContainerSrcToTarget { public NumberSource Number { get; set; } }
+        public class ContainerTarget { public NumberTarget Number { get; set; } }
+
+        public class ContainerSrcToNullableTarget { public NumberSource Number { get; set; } }
+        public class ContainerNullableTarget { public NumberTarget? Number { get; set; } }
+
+        public class ContainerNullableSrcToTarget { public NumberSource? Number { get; set; } }
+        public class ContainerNullableSrcToNullableTarget { public NumberSource? Number { get; set; } }
+
+        public struct ComplexValue { public int Value { get; set; } }
+        public class ComplexValueContainerSource { public ComplexValue? Item { get; set; } }
+        public class ComplexValueContainerTarget { public ComplexValue Item { get; set; } }
 
         public class PersonNameSource { public string Name { get; set; } = string.Empty; }
 

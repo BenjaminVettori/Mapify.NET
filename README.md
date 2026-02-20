@@ -53,119 +53,10 @@ public class PersonDto {
 }
 ```
 
-### 2. Create a Mapping
+### 2. Create Profiles (recommended)
 
-To create a mapping, use `Mapper.CreateMap`. You can place these in a static class usage.
-
-```csharp
-using Mapify.NET;
-using System.Linq.Expressions;
-
-public static class PersonMappings {
-
-    // Create a generic map. Implicitly maps properties with matching names/types.
-    // Also explicitly maps "Name" from FirstName + LastName.
-    public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
-        Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
-            Name = $"{p.FirstName} {p.LastName}",
-             // Invoke allows using other maps inside this expression (requires LINQKit)
-            MainAddress = AddressMappings.AddressToAddressDto.Invoke(p.MainAddress)
-        });
-}
-
-public static class AddressMappings {
-     public static readonly Expression<Func<Address, AddressDto>> AddressToAddressDto =
-        Mapper.CreateMap<Address, AddressDto>();
-}
-```
-
-### 3. Use with Entity Framework (IQueryable + LinqKit)
-
-Mapify produces standard Expression Trees, so you can use them directly in LINQ queries.
-If you use nested lookups (like `.Invoke`), you should combine it with [LINQKit](https://github.com/scottksmith95/LINQKit) to expand the expressions.
-Otherwise you will run into issues with EF not being able to translate the invoked expressions.
-Take a look at the LINQKit documentation for more details, but the basic usage is to add `.AsExpandable()` to your query before using the mapping expressions
-and then use `.Invoke()` in your mapping expressions to call other maps.
-
-```csharp
-public async Task<IEnumerable<PersonDto>> GetPersonDtosAsync(int skip, int take, CancellationToken cancellationToken = default) {
-    return await _dbContext.Persons
-        .AsExpandable()
-        .Select(PersonMappings.PersonToPersonDto)
-        .OrderBy(x => x.Name)
-        .Skip(skip)
-        .Take(take)
-        .ToArrayAsync(cancellationToken);
-}
-```
-
-#### LINQKit package selection by .NET / EF version
-
-`AsExpandable()` is the key piece that lets EF translate expressions that use `.Invoke()`. Without it, invoked expressions often fail translation at runtime.
-
-Use the package that matches your scenario:
-
-- `LinqKit.Core`: use when you need expression composition utilities (`PredicateBuilder`, `Invoke`, `Expand`) without EF-specific integration.
-- `LinqKit` or `LinqKit.EntityFramework`: use for Entity Framework 6.x projects.
-- `LinqKit.Microsoft.EntityFrameworkCore`: use for Entity Framework Core projects.
-
-For EF Core, the **package ID stays the same** (`LinqKit.Microsoft.EntityFrameworkCore`), but you must install the version that matches your EF Core major:
-
-| App target | EF stack | NuGet package ID | NuGet version major |
-|---|---|---|---|
-| .NET Framework 4.6.2+ | Entity Framework 6.x | `LinqKit` or `LinqKit.EntityFramework` | latest compatible |
-| .NET 8 | EF Core 8 | `LinqKit.Microsoft.EntityFrameworkCore` | 8.x |
-| .NET 8 / .NET 9 | EF Core 9 | `LinqKit.Microsoft.EntityFrameworkCore` | 9.x |
-| .NET 8 / .NET 9 / .NET 10 | EF Core 10 | `LinqKit.Microsoft.EntityFrameworkCore` | 10.x |
-
-> **Rule of thumb:** match LINQKit EF Core major version to your EF Core major version.
->
-> **If Mapify is referenced from a class library (`netstandard2.0` / `netstandard2.1`):** install the EF-specific LINQKit package in the **application project** that owns the `DbContext` and executes the query.
-
-
-#### Mapping Nested Objects & Collections (Entity Framework)
-
-To map nested objects and collections, use standard LINQ methods combined with `.Invoke()` from LinqKit. This allows you to reuse existing mapping expressions deep in the object graph.
-
-```csharp
-public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
-    Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
-        Name = $"{p.FirstName} {p.LastName}",
-        
-        // Map single child object
-        MainAddress = AddressMappings.AddressToAddressDto.Invoke(p.MainAddress),
-
-        // Map child collection
-        Addresses = p.Addresses
-            .Select(a => AddressMappings.AddressToAddressDto.Invoke(a))
-            .ToList()
-    });
-```
-
-> **Note:** For this to work in EF, the main query must use `.AsExpandable()` as shown in the previous section.
-
-### 4. Use In-Memory
-
-You can also use the same expressions to map objects in memory using the `.Map()` extension method.
-
-```csharp
-var person = new Person { FirstName = "John", LastName = "Doe" };
-
-// 1. Map to a new Object
-PersonDto dto = PersonMappings.PersonToPersonDto.Map(person);
-
-// 2. Map to an existing Object
-var existingDto = new PersonDto();
-PersonMappings.PersonToPersonDto.Map(person, existingDto);
-
-// 3. Map a Collection
-var persons = new List<Person>();
-var dtos = persons.Select(p => PersonMappings.PersonToPersonDto.Map(p)).ToList();
-```
-
-### 5. Register Instance Mapper with DI
-
-Mapify also provides an instance-based mapper (`IMapify`) that can be configured via profiles and registered with DI.
+The recommended approach is profile + instance mapper (`IMapify`).
+It keeps mapping configuration explicit and is easier to test.
 
 ```csharp
 using Mapify.NET;
@@ -177,14 +68,27 @@ public class PersonProfile : MapifyProfile {
     }
 }
 
-// You can also keep the returned expression for composition in the same profile.
+// Use UseMap<TSource, TTarget>(sourceMember) to explicitly mark that
+// a property should be mapped via an existing registered map.
 public class QueryProfile : MapifyProfile {
     protected override void Configure() {
-        var addressMap = CreateMap<Address, AddressDto>();
+        CreateMap<Address, AddressDto>();
 
         CreateMap<Person, PersonDto>(p => new PersonDto {
             Name = p.FirstName + " " + p.LastName,
-            MainAddress = addressMap.Invoke(p.MainAddress)
+            MainAddress = UseMap<Address, AddressDto>(p.MainAddress)
+        });
+    }
+}
+
+// If source and destination property names differ, pass the source explicitly.
+public class NumberProfile : MapifyProfile {
+    protected override void Configure() {
+        CreateMap<NumberSource, NumberDto>();
+
+        CreateMap<Order, OrderDto>(x => new OrderDto {
+            // Order.SourceNumber -> OrderDto.Number
+            Number = UseMap<NumberSource, NumberDto>(x.SourceNumber)
         });
     }
 }
@@ -201,7 +105,7 @@ services.AddMapify(ServiceLifetime.Scoped, typeof(PersonProfile).Assembly);
 
 // Manually add profiles of the given assembly
 // registers IMapify as Scoped without adding profiles
-services.AddMapifyProfiles(typeof(PersonProfile).Assembly)
+services.AddMapifyProfiles(typeof(PersonProfile).Assembly);
 services.AddMapify(ServiceLifetime.Scoped);
 
 // Register a specific profile manually
@@ -217,8 +121,42 @@ var defaultMapper = provider.GetRequiredService<IMapify>();
 var queryMapper = provider.GetMapify("queries");
 ```
 
-`CreateMap<TSource, TTarget>(...)` inside `MapifyProfile` returns the registered expression.
-This lets you compose maps inside a profile without duplicating expressions.
+`CreateMap<TSource, TTarget>(...)` inside `MapifyProfile` is registration-only.
+Map building is deferred until all profiles are registered, so unordered registrations are supported.
+
+When you need explicit nested map usage in a profile initializer, use `UseMap<TSource, TTarget>(x.SourceMember)`.
+During build, Mapify resolves the dependency to the registered map (including nullable variants).
+
+`UseMap` also supports arrays and enumerable types. If a map exists for element types (`TSrc -> TDest`),
+you can use it for collection shapes like `TSrc[] -> TDest[]` and `IEnumerable<TSrc> -> IEnumerable<TDest>`.
+
+### 3. Use the instance mapper in-memory
+
+```csharp
+var mapper = provider.GetRequiredService<IMapify>();
+
+var dto = mapper.Map<Person, PersonDto>(person);
+
+var existing = new PersonDto();
+mapper.Map(person, existing);
+```
+
+### 4. Use the instance mapper with Entity Framework (`IQueryable`)
+
+`IMapify.GetMap<TSource, TTarget>()` returns the expression for projections.
+
+```csharp
+public async Task<IEnumerable<PersonDto>> GetPersonDtosAsync(int skip, int take, CancellationToken cancellationToken = default) {
+    var mapExpr = _mapify.GetMap<Person, PersonDto>();
+
+    return await _dbContext.Persons
+        .Select(mapExpr)
+        .OrderBy(x => x.Name)
+        .Skip(skip)
+        .Take(take)
+        .ToArrayAsync(cancellationToken);
+}
+```
 
 ## Detailed Functionality 📚
 
@@ -232,6 +170,59 @@ When `CreateMap<TSource, TTarget>()` is called, Mapify automatically generates b
     *   **Nullable Handling**:
         *   `T` -> `T?` (Implicit cast)
         *   `T?` -> `T` (Uses source value if not null, otherwise default(T))
+
+    If a map already exists for a same-name property type pair (e.g. `Address -> AddressDto`),
+    Mapify uses that map implicitly before falling back to direct assignment.
+
+### Static API (advanced scenarios)
+
+The static `Mapper` API is still fully supported, but typically used in advanced scenarios.
+
+#### Static map declarations
+
+```csharp
+using Mapify.NET;
+using System.Linq.Expressions;
+
+public static class PersonMappings {
+    public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
+        Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
+            Name = $"{p.FirstName} {p.LastName}",
+            MainAddress = AddressMappings.AddressToAddressDto.Invoke(p.MainAddress)
+        });
+}
+
+public static class AddressMappings {
+    public static readonly Expression<Func<Address, AddressDto>> AddressToAddressDto =
+        Mapper.CreateMap<Address, AddressDto>();
+}
+```
+
+#### Static API with Entity Framework + LINQKit
+
+If your static expressions use `.Invoke(...)`, combine with LINQKit and `.AsExpandable()`.
+
+```csharp
+public async Task<IEnumerable<PersonDto>> GetPersonDtosAsync(int skip, int take, CancellationToken cancellationToken = default) {
+    return await _dbContext.Persons
+        .AsExpandable()
+        .Select(PersonMappings.PersonToPersonDto)
+        .OrderBy(x => x.Name)
+        .Skip(skip)
+        .Take(take)
+        .ToArrayAsync(cancellationToken);
+}
+```
+
+`AsExpandable()` is the key piece that lets EF translate expressions that use `.Invoke()`.
+
+Use the package that matches your scenario:
+
+- `LinqKit.Core`: expression composition utilities (`PredicateBuilder`, `Invoke`, `Expand`) without EF integration.
+- `LinqKit` or `LinqKit.EntityFramework`: for Entity Framework 6.x.
+- `LinqKit.Microsoft.EntityFrameworkCore`: for Entity Framework Core.
+
+For EF Core, the package ID stays the same (`LinqKit.Microsoft.EntityFrameworkCore`), but the major version should match EF Core major.
 
 ### Global Configuration & Static Maps
 

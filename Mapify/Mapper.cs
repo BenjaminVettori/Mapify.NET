@@ -4,6 +4,8 @@ using System.Reflection;
 namespace Mapify.NET {
     public static class Mapper {
 
+        private const string UseMapMarkerName = "UseMap";
+
         private static bool GlobalUseDefaultMapIfTypeMapIsMissing = false;
 
         /// <summary>
@@ -245,7 +247,20 @@ namespace Mapify.NET {
         public static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
             Expression<Func<TSource, TDestination>>? partial = null
         ) {
+            return CreateMap(partial, TryGetRegisteredMap);
+        }
+
+        internal static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
+            Expression<Func<TSource, TDestination>>? partial,
+            Func<Type, Type, LambdaExpression?>? existingMapResolver
+        ) {
             var baseParam = Expression.Parameter(typeof(TSource), "x");
+
+            // get all public instance properties of the source type that can be read from
+            var sourceProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.CanRead)
+                .ToDictionary(p => p.Name);
+
             var existingBindings = new Dictionary<string, MemberBinding>();
             if (partial != null) {
                 // update the parameter name of the partial expression to "x"
@@ -254,7 +269,7 @@ namespace Mapify.NET {
 
                 // copy existing bindings from the partial expression
                 foreach (var partialBinding in partialUpdated.Bindings.OfType<MemberAssignment>()) {
-                    MemberAssignment binding = MapPartialBinding(partialBinding);
+                    MemberAssignment binding = MapPartialBinding(partialBinding, existingMapResolver);
                     existingBindings[binding.Member.Name] = binding;
                 }
             }
@@ -263,11 +278,6 @@ namespace Mapify.NET {
             var destinationProperties = typeof(TDestination).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Where(p => p.CanWrite);
 
-            // get all public instance properties of the source type that can be read from
-            var sourceProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.CanRead)
-                .ToDictionary(p => p.Name);
-
             var allBindings = new List<MemberBinding>(existingBindings.Values);
 
             foreach (var destProp in destinationProperties) {
@@ -275,14 +285,17 @@ namespace Mapify.NET {
                 if (existingBindings.ContainsKey(destProp.Name))
                     continue;
 
-                var sourceProp = GetCompatibleSourceProperty(sourceProperties, destProp);
+                var sourceProp = GetSourceProperty(sourceProperties, destProp);
 
-                // If there is a source property with the same name and the types are compatible
+                // If there is a source property with the same name, prefer an existing map for sourceType -> targetType.
+                // If no map exists, fallback to default implicit assignment when types are compatible.
                 if (sourceProp != null) {
-                    MemberAssignment binding;
-                    binding = GetImplicitBinding(baseParam, sourceProp, destProp);
-
-                    allBindings.Add(binding);
+                    if (TryGetBindingFromExistingMap(baseParam, sourceProp, destProp, existingMapResolver, out var mappedBinding)) {
+                        // If a map for sourceProp.Type -> destProp.Type exists, prefer it over direct assignment
+                        allBindings.Add(mappedBinding);
+                    } else if (TryGetImplicitBinding(baseParam, sourceProp, destProp, out var implicitBinding)) {
+                        allBindings.Add(implicitBinding);
+                    }
                 }
             }
 
@@ -296,8 +309,16 @@ namespace Mapify.NET {
         /// </summary>
         /// <param name="partialBinding"></param>
         /// <returns></returns>
-        private static MemberAssignment MapPartialBinding(MemberAssignment partialBinding) {
+        private static MemberAssignment MapPartialBinding(
+            MemberAssignment partialBinding,
+            Func<Type, Type, LambdaExpression?>? existingMapResolver
+        ) {
             var expr = partialBinding.Expression;
+
+            if (TryResolveUseMapMarker(partialBinding, existingMapResolver, out var mappedBinding)) {
+                return mappedBinding;
+            }
+
             // replace the coalesce operator with a conditional expression
             if (expr is BinaryExpression binaryExpr &&
                 binaryExpr.NodeType == ExpressionType.Coalesce) {
@@ -315,6 +336,88 @@ namespace Mapify.NET {
             return binding;
         }
 
+        private static bool TryResolveUseMapMarker(
+            MemberAssignment partialBinding,
+            Func<Type, Type, LambdaExpression?>? existingMapResolver,
+            out MemberAssignment mappedBinding
+        ) {
+            mappedBinding = null!;
+
+            var markerCandidate = UnwrapConvert(partialBinding.Expression);
+            if (markerCandidate is not MethodCallExpression methodCall) {
+                return false;
+            }
+
+            if (!IsUseMapMarker(methodCall.Method)) {
+                return false;
+            }
+
+            if (partialBinding.Member is not PropertyInfo destProp) {
+                throw new InvalidOperationException($"{UseMapMarkerName} marker can only be used for property bindings.");
+            }
+
+            if (existingMapResolver == null) {
+                throw new InvalidOperationException($"{UseMapMarkerName} marker requires a map resolver.");
+            }
+
+            var genericArgs = methodCall.Method.GetGenericArguments();
+            var markerSourceType = genericArgs[0];
+            var markerTargetType = genericArgs[1];
+
+            if (methodCall.Arguments.Count != 1) {
+                throw new InvalidOperationException($"{UseMapMarkerName} requires an explicit source argument. Use {UseMapMarkerName}<TSource, TTarget>(x.Property). For same-name properties you can omit {UseMapMarkerName} and rely on implicit nested map resolution.");
+            }
+
+            var sourceAccess = methodCall.Arguments[0];
+
+            if (!TryBuildMappedExpression(sourceAccess, markerSourceType, markerTargetType, existingMapResolver, out var mappedBody, out var sourceNullCheck)) {
+                throw new InvalidOperationException($"No mapping found for {markerSourceType.FullName} -> {markerTargetType.FullName} required by {UseMapMarkerName} on property '{destProp.Name}'.");
+            }
+
+            if (!TryAdaptMappedResult(mappedBody, destProp.PropertyType, out var adaptedResult)) {
+                throw new InvalidOperationException($"{UseMapMarkerName} target type '{destProp.PropertyType.FullName}' is not compatible with map target type '{markerTargetType.FullName}' for property '{destProp.Name}'.");
+            }
+
+            if (sourceNullCheck != null) {
+                adaptedResult = Expression.Condition(
+                    sourceNullCheck,
+                    adaptedResult,
+                    CreateDefaultValueExpression(destProp.PropertyType)
+                );
+            }
+
+            mappedBinding = Expression.Bind(destProp, adaptedResult);
+            return true;
+        }
+
+        private static Expression UnwrapConvert(Expression expression) {
+            var current = expression;
+            while (current is UnaryExpression unary
+                   && (unary.NodeType == ExpressionType.Convert || unary.NodeType == ExpressionType.ConvertChecked)) {
+                current = unary.Operand;
+            }
+
+            return current;
+        }
+
+        private static bool IsUseMapMarker(MethodInfo method) {
+            if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProfile)) {
+                return false;
+            }
+
+            var genericDefinition = method.GetGenericMethodDefinition();
+            if (!string.Equals(genericDefinition.Name, UseMapMarkerName, StringComparison.Ordinal)) {
+                return false;
+            }
+
+            if (genericDefinition.GetGenericArguments().Length != 2) {
+                return false;
+            }
+
+            var parameterCount = genericDefinition.GetParameters().Length;
+            return parameterCount == 1;
+        }
+
         /// <summary>
         /// The target is compatible if:
         /// * the source property exists and
@@ -325,22 +428,35 @@ namespace Mapify.NET {
         /// <param name="sourceProp">The property to map from</param>
         /// <param name="destProp">The property to map to</param>
         /// <returns></returns>
-        private static PropertyInfo? GetCompatibleSourceProperty(IDictionary<string, PropertyInfo> sourceTypeProperties, PropertyInfo destProp) {
+        private static PropertyInfo? GetSourceProperty(IDictionary<string, PropertyInfo> sourceTypeProperties, PropertyInfo destProp) {
             // Try to find a matching property with the same name
             if (!sourceTypeProperties.TryGetValue(destProp.Name, out var sourceProp)) {
                 return null;
             }
 
-            // check if the property type is compatible. Also allow nullable sources if target is not nullable, because the mapper will use default values in this case.
-            var isCompatibleType = sourceProp != null && (
-                destProp.PropertyType.IsAssignableFrom(sourceProp.PropertyType) ||
+            return sourceProp;
+        }
 
-                    Nullable.GetUnderlyingType(sourceProp.PropertyType) != null &&
-                    destProp.PropertyType.IsAssignableFrom(Nullable.GetUnderlyingType(sourceProp.PropertyType))
+        private static bool TryGetImplicitBinding(
+            ParameterExpression baseParam,
+            PropertyInfo sourceProp,
+            PropertyInfo destProp,
+            out MemberAssignment binding
+        ) {
+            binding = null!;
 
-            );
+            var sourceNullableType = Nullable.GetUnderlyingType(sourceProp.PropertyType);
 
-            return isCompatibleType ? sourceProp : null;
+            var isCompatibleType =
+                destProp.PropertyType.IsAssignableFrom(sourceProp.PropertyType)
+                || (sourceNullableType != null && destProp.PropertyType.IsAssignableFrom(sourceNullableType));
+
+            if (!isCompatibleType) {
+                return false;
+            }
+
+            binding = GetImplicitBinding(baseParam, sourceProp, destProp);
+            return true;
         }
 
         /// <summary>
@@ -382,6 +498,371 @@ namespace Mapify.NET {
             }
 
             return binding;
+        }
+
+        private static bool TryGetBindingFromExistingMap(
+            ParameterExpression baseParam,
+            PropertyInfo sourceProp,
+            PropertyInfo destProp,
+            Func<Type, Type, LambdaExpression?>? existingMapResolver,
+            out MemberAssignment binding
+        ) {
+            binding = null!;
+
+            if (existingMapResolver == null) {
+                return false;
+            }
+
+            var sourceAccess = Expression.Property(baseParam, sourceProp);
+
+            if (!TryBuildMappedExpression(sourceAccess, sourceProp.PropertyType, destProp.PropertyType, existingMapResolver, out var adaptedResult, out var sourceNullCheck)) {
+                return false;
+            }
+
+            // If source is nullable (or reference) and null, map to default(target).
+            if (sourceNullCheck != null) {
+                adaptedResult = Expression.Condition(
+                    sourceNullCheck,
+                    adaptedResult,
+                    CreateDefaultValueExpression(destProp.PropertyType)
+                );
+            }
+
+            binding = Expression.Bind(destProp, adaptedResult);
+            return true;
+        }
+
+        private static bool TryBuildMappedExpression(
+            Expression sourceAccess,
+            Type sourceType,
+            Type destinationType,
+            Func<Type, Type, LambdaExpression?> resolver,
+            out Expression mappedResult,
+            out Expression? sourceNullCheck
+        ) {
+            mappedResult = null!;
+            sourceNullCheck = null;
+
+            if (TryBuildDirectMappedExpression(sourceAccess, sourceType, destinationType, resolver, out mappedResult, out sourceNullCheck)) {
+                return true;
+            }
+
+            if (TryBuildEnumerableMappedExpression(sourceAccess, sourceType, destinationType, resolver, out mappedResult, out sourceNullCheck)) {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryBuildDirectMappedExpression(
+            Expression sourceAccess,
+            Type sourceType,
+            Type destinationType,
+            Func<Type, Type, LambdaExpression?> resolver,
+            out Expression mappedResult,
+            out Expression? sourceNullCheck
+        ) {
+            mappedResult = null!;
+            sourceNullCheck = null;
+
+            var mapExpr = ResolveMapForNullableVariants(sourceType, destinationType, resolver);
+            if (mapExpr == null || mapExpr.Parameters.Count != 1 || mapExpr.ReturnType == typeof(void)) {
+                return false;
+            }
+
+            if (!TryAdaptSourceForMap(sourceAccess, mapExpr.Parameters[0].Type, out var adaptedSource, out sourceNullCheck)) {
+                return false;
+            }
+
+            var mappedBody = new ParameterReplaceVisitor(mapExpr.Parameters[0], adaptedSource).Visit(mapExpr.Body)!;
+
+            if (!TryAdaptMappedResult(mappedBody, destinationType, out mappedResult)) {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryBuildEnumerableMappedExpression(
+            Expression sourceAccess,
+            Type sourceType,
+            Type destinationType,
+            Func<Type, Type, LambdaExpression?> resolver,
+            out Expression mappedResult,
+            out Expression? sourceNullCheck
+        ) {
+            mappedResult = null!;
+            sourceNullCheck = null;
+
+            if (!TryGetEnumerableElementType(sourceType, out var sourceElementType)
+                || !TryGetEnumerableElementType(destinationType, out var destinationElementType)
+                || !TryGetEnumerableElementType(sourceAccess.Type, out var sourceAccessElementType)) {
+                return false;
+            }
+
+            var elementMapExpr = ResolveMapForNullableVariants(sourceElementType, destinationElementType, resolver);
+            var itemParam = Expression.Parameter(sourceAccessElementType, "e");
+            Expression adaptedItemResult;
+            Expression? itemNullCheck;
+
+            if (elementMapExpr != null && elementMapExpr.Parameters.Count == 1 && elementMapExpr.ReturnType != typeof(void)) {
+                if (!TryAdaptSourceForMap(itemParam, elementMapExpr.Parameters[0].Type, out var adaptedItem, out itemNullCheck)) {
+                    return false;
+                }
+
+                var mappedItemBody = new ParameterReplaceVisitor(elementMapExpr.Parameters[0], adaptedItem).Visit(elementMapExpr.Body)!;
+                if (!TryAdaptMappedResult(mappedItemBody, destinationElementType, out adaptedItemResult)) {
+                    return false;
+                }
+            } else {
+                if (!TryBuildImplicitEnumerableElementProjection(itemParam, destinationElementType, out adaptedItemResult, out itemNullCheck)) {
+                    return false;
+                }
+            }
+
+            if (itemNullCheck != null) {
+                adaptedItemResult = Expression.Condition(
+                    itemNullCheck,
+                    adaptedItemResult,
+                    CreateDefaultValueExpression(destinationElementType)
+                );
+            }
+
+            var selector = Expression.Lambda(adaptedItemResult, itemParam);
+            var selectExpr = Expression.Call(
+                typeof(Enumerable),
+                nameof(Enumerable.Select),
+                new[] { sourceAccessElementType, destinationElementType },
+                sourceAccess,
+                selector
+            );
+
+            if (!TryMaterializeEnumerable(selectExpr, destinationType, destinationElementType, out mappedResult)) {
+                return false;
+            }
+
+            if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
+                sourceNullCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+            }
+
+            return true;
+        }
+
+        private static bool TryBuildImplicitEnumerableElementProjection(
+            ParameterExpression itemParam,
+            Type destinationElementType,
+            out Expression projection,
+            out Expression? itemNullCheck
+        ) {
+            projection = null!;
+            itemNullCheck = null;
+
+            if (itemParam.Type == destinationElementType) {
+                projection = itemParam;
+                return true;
+            }
+
+            var sourceNullableType = Nullable.GetUnderlyingType(itemParam.Type);
+            var destinationNullableType = Nullable.GetUnderlyingType(destinationElementType);
+
+            if (destinationNullableType != null && itemParam.Type == destinationNullableType) {
+                projection = Expression.Convert(itemParam, destinationElementType);
+                return true;
+            }
+
+            if (destinationNullableType == null && sourceNullableType != null && destinationElementType == sourceNullableType) {
+                itemNullCheck = Expression.NotEqual(itemParam, Expression.Constant(null, itemParam.Type));
+                projection = Expression.Property(itemParam, "Value");
+                return true;
+            }
+
+            if (destinationElementType.IsAssignableFrom(itemParam.Type)) {
+                projection = itemParam;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryMaterializeEnumerable(
+            Expression enumerableExpression,
+            Type destinationType,
+            Type destinationElementType,
+            out Expression materialized
+        ) {
+            materialized = null!;
+
+            if (destinationType.IsArray) {
+                materialized = Expression.Call(
+                    typeof(Enumerable),
+                    nameof(Enumerable.ToArray),
+                    new[] { destinationElementType },
+                    enumerableExpression
+                );
+                return true;
+            }
+
+            if (destinationType.IsAssignableFrom(enumerableExpression.Type)) {
+                materialized = enumerableExpression;
+                return true;
+            }
+
+            var toListExpr = Expression.Call(
+                typeof(Enumerable),
+                nameof(Enumerable.ToList),
+                new[] { destinationElementType },
+                enumerableExpression
+            );
+
+            if (destinationType.IsAssignableFrom(toListExpr.Type)) {
+                materialized = destinationType == toListExpr.Type
+                    ? toListExpr
+                    : Expression.Convert(toListExpr, destinationType);
+                return true;
+            }
+
+            var ienumerableOfTarget = typeof(IEnumerable<>).MakeGenericType(destinationElementType);
+            var ctor = destinationType.GetConstructor(new[] { ienumerableOfTarget });
+            if (ctor != null) {
+                materialized = Expression.New(ctor, enumerableExpression);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetEnumerableElementType(Type type, out Type elementType) {
+            elementType = null!;
+
+            if (type == typeof(string)) {
+                return false;
+            }
+
+            if (type.IsArray) {
+                elementType = type.GetElementType()!;
+                return true;
+            }
+
+            var enumerableInterface = type
+                .GetInterfaces()
+                .Concat(new[] { type })
+                .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+
+            if (enumerableInterface == null) {
+                return false;
+            }
+
+            elementType = enumerableInterface.GetGenericArguments()[0];
+            return true;
+        }
+
+        private static LambdaExpression? ResolveMapForNullableVariants(
+            Type sourceType,
+            Type destinationType,
+            Func<Type, Type, LambdaExpression?> resolver
+        ) {
+            var sourceCoreType = Nullable.GetUnderlyingType(sourceType) ?? sourceType;
+            var destinationCoreType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
+
+            // Prefer exact first, then lifted variants.
+            return resolver(sourceType, destinationType)
+                ?? resolver(sourceType, destinationCoreType)
+                ?? resolver(sourceCoreType, destinationType)
+                ?? resolver(sourceCoreType, destinationCoreType);
+        }
+
+        private static bool TryAdaptSourceForMap(
+            Expression sourceAccess,
+            Type mapSourceType,
+            out Expression adaptedSource,
+            out Expression? sourceHasValueCheck
+        ) {
+            adaptedSource = sourceAccess;
+            sourceHasValueCheck = null;
+
+            if (sourceAccess.Type == mapSourceType) {
+                // For reference/nullable values, keep null fallback behavior.
+                if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
+                    sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+                }
+                return true;
+            }
+
+            var sourceNullableUnderlying = Nullable.GetUnderlyingType(sourceAccess.Type);
+            var mapNullableUnderlying = Nullable.GetUnderlyingType(mapSourceType);
+
+            // T? -> T
+            if (sourceNullableUnderlying != null && sourceNullableUnderlying == mapSourceType) {
+                sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+                adaptedSource = Expression.Property(sourceAccess, "Value");
+                return true;
+            }
+
+            // T -> T?
+            if (mapNullableUnderlying != null && sourceAccess.Type == mapNullableUnderlying) {
+                adaptedSource = Expression.Convert(sourceAccess, mapSourceType);
+                return true;
+            }
+
+            if (mapSourceType.IsAssignableFrom(sourceAccess.Type)) {
+                if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
+                    sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+                }
+                adaptedSource = sourceAccess;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryAdaptMappedResult(Expression mappedBody, Type targetType, out Expression adaptedResult) {
+            adaptedResult = mappedBody;
+
+            if (mappedBody.Type == targetType) {
+                return true;
+            }
+
+            var targetNullableUnderlying = Nullable.GetUnderlyingType(targetType);
+            var mappedNullableUnderlying = Nullable.GetUnderlyingType(mappedBody.Type);
+
+            // T -> T?
+            if (targetNullableUnderlying != null && mappedBody.Type == targetNullableUnderlying) {
+                adaptedResult = Expression.Convert(mappedBody, targetType);
+                return true;
+            }
+
+            // T? -> T (keep default fallback)
+            if (mappedNullableUnderlying != null && targetType == mappedNullableUnderlying) {
+                var hasValue = Expression.NotEqual(mappedBody, Expression.Constant(null, mappedBody.Type));
+                var value = Expression.Property(mappedBody, "Value");
+                adaptedResult = Expression.Condition(hasValue, value, Expression.Default(targetType));
+                return true;
+            }
+
+            if (targetType.IsAssignableFrom(mappedBody.Type)) {
+                adaptedResult = mappedBody;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool CanBeNull(Type type)
+            => !type.IsValueType || Nullable.GetUnderlyingType(type) != null;
+
+        private static bool IsCollectionLikeType(Type type)
+            => type != typeof(string)
+               && typeof(System.Collections.IEnumerable).IsAssignableFrom(type)
+               && type != typeof(byte[]);
+
+        private static Expression CreateDefaultValueExpression(Type type)
+            => CanBeNull(type)
+                ? Expression.Constant(null, type)
+                : Expression.Default(type);
+
+        private static LambdaExpression? TryGetRegisteredMap(Type sourceType, Type destinationType) {
+            var key = new Tuple<Type, Type>(sourceType, destinationType);
+            return Converters.TryGetValue(key, out var existingConverter) ? existingConverter : null;
         }
     }
 }
