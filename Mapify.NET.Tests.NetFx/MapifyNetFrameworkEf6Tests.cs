@@ -304,6 +304,73 @@ public class MapifyNetFrameworkEf6Tests {
         }
     }
 
+    [Fact]
+    public void InstanceMapify_UseMap_ShouldAllowChaining_InEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-300" },
+                    new Ef6Phone { Number = "+44-100" },
+                    new Ef6Phone { Number = "+44-200" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify(new IMapifyProfile[] {
+                new Ef6PhoneProfile(),
+                new Ef6PersonChainedPhonesProfile()
+            });
+
+            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonChainedPhonesDto>();
+
+            var result = db.People
+                .Select(mapExpr)
+                .Single();
+
+            Assert.Equal(new[] { "+44-100", "+44-200", "+44-300" }, result.PhonesOrdered.Select(x => x.Number).ToArray());
+        }
+    }
+
+    [Fact]
+    public void InstanceMapify_UseMapNamed_ShouldAllowChaining_InEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-300" },
+                    new Ef6Phone { Number = "+44-100" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify(new IMapifyProfile[] {
+                new Ef6NamedPhoneProfile(),
+                new Ef6NamedPersonChainedProfile()
+            });
+
+            var mapExpr = mapify.GetMap<Ef6Person, Ef6NamedPersonChainedPhonesDto>();
+
+            var result = db.People
+                .Select(mapExpr)
+                .Single();
+
+            Assert.Equal(new[] { "+44-100 [MASKED]", "+44-300 [MASKED]" }, result.PhonesOrdered.Select(x => x.Number).ToArray());
+        }
+    }
+
     public class Ef6MapifyContext : DbContext {
         public Ef6MapifyContext(DbConnection connection)
             : base(connection, true) {
@@ -381,6 +448,14 @@ public class MapifyNetFrameworkEf6Tests {
         public IEnumerable<Ef6PhoneDto> PhonesMasked { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
     }
 
+    public class Ef6PersonChainedPhonesDto {
+        public IEnumerable<Ef6PhoneDto> PhonesOrdered { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+    }
+
+    public class Ef6NamedPersonChainedPhonesDto {
+        public IEnumerable<Ef6PhoneDto> PhonesOrdered { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+    }
+
     private class Ef6PhoneProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<Ef6Phone, Ef6PhoneDto>();
@@ -436,6 +511,26 @@ public class MapifyNetFrameworkEf6Tests {
             CreateMap<Ef6Person, Ef6NamedPhonesDto>(x => new Ef6NamedPhonesDto {
                 PhonesRaw = UseMap<IEnumerable<Ef6Phone>, IEnumerable<Ef6PhoneDto>>("Raw", x.Phones),
                 PhonesMasked = UseMap<IEnumerable<Ef6Phone>, IEnumerable<Ef6PhoneDto>>("Masked", x.Phones)
+            });
+        }
+    }
+
+    private class Ef6PersonChainedPhonesProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6PersonChainedPhonesDto>(x => new Ef6PersonChainedPhonesDto {
+                PhonesOrdered = UseMap<IEnumerable<Ef6Phone>, IEnumerable<Ef6PhoneDto>>(x.Phones)
+                    .OrderBy(dto => dto.Number)
+                    .ToList()
+            });
+        }
+    }
+
+    private class Ef6NamedPersonChainedProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6NamedPersonChainedPhonesDto>(x => new Ef6NamedPersonChainedPhonesDto {
+                PhonesOrdered = UseMap<IEnumerable<Ef6Phone>, IEnumerable<Ef6PhoneDto>>("Masked", x.Phones)
+                    .OrderBy(dto => dto.Number)
+                    .ToList()
             });
         }
     }

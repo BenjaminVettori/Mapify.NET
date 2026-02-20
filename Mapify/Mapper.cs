@@ -319,6 +319,10 @@ namespace Mapify.NET {
                 return mappedBinding;
             }
 
+            if (existingMapResolver != null) {
+                expr = new UseMapMarkerReplaceVisitor(existingMapResolver).Visit(expr)!;
+            }
+
             // replace the coalesce operator with a conditional expression
             if (expr is BinaryExpression binaryExpr &&
                 binaryExpr.NodeType == ExpressionType.Coalesce) {
@@ -334,6 +338,70 @@ namespace Mapify.NET {
             }
             var binding = Expression.Bind(partialBinding.Member, expr);
             return binding;
+        }
+
+        private sealed class UseMapMarkerReplaceVisitor(
+            Func<Type, Type, string?, LambdaExpression?> existingMapResolver
+        ) : ExpressionVisitor {
+            protected override Expression VisitMethodCall(MethodCallExpression node) {
+                if (IsUseMapMarker(node.Method)) {
+                    if (!TryResolveUseMapCall(node, existingMapResolver, out var replacement)) {
+                        var genericArgs = node.Method.GetGenericArguments();
+                        throw new InvalidOperationException($"No mapping found for {genericArgs[0].FullName} -> {genericArgs[1].FullName} required by {UseMapMarkerName}.");
+                    }
+
+                    return replacement;
+                }
+
+                return base.VisitMethodCall(node);
+            }
+        }
+
+        private static bool TryResolveUseMapCall(
+            MethodCallExpression methodCall,
+            Func<Type, Type, string?, LambdaExpression?> existingMapResolver,
+            out Expression resolvedExpression
+        ) {
+            resolvedExpression = null!;
+
+            var genericArgs = methodCall.Method.GetGenericArguments();
+            var markerSourceType = genericArgs[0];
+            var markerTargetType = genericArgs[1];
+
+            string? markerMapName = null;
+            Expression sourceAccess;
+
+            if (methodCall.Arguments.Count == 1) {
+                sourceAccess = methodCall.Arguments[0];
+            } else if (methodCall.Arguments.Count == 2) {
+                if (methodCall.Arguments[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
+                    throw new InvalidOperationException($"{UseMapMarkerName} name argument must be a non-empty constant string.");
+                }
+
+                markerMapName = mapName;
+                sourceAccess = methodCall.Arguments[1];
+            } else {
+                throw new InvalidOperationException($"{UseMapMarkerName} requires an explicit source argument. Use {UseMapMarkerName}<TSource, TTarget>(x.Property). For same-name properties you can omit {UseMapMarkerName} and rely on implicit nested map resolution.");
+            }
+
+            if (!TryBuildMappedExpression(sourceAccess, markerSourceType, markerTargetType, existingMapResolver, markerMapName, out var mappedBody, out var sourceNullCheck)) {
+                return false;
+            }
+
+            if (!TryAdaptMappedResult(mappedBody, markerTargetType, out var adaptedResult)) {
+                throw new InvalidOperationException($"{UseMapMarkerName} target type '{markerTargetType.FullName}' is not compatible with resolved map output type '{mappedBody.Type.FullName}'.");
+            }
+
+            if (sourceNullCheck != null) {
+                adaptedResult = Expression.Condition(
+                    sourceNullCheck,
+                    adaptedResult,
+                    CreateDefaultValueExpression(markerTargetType)
+                );
+            }
+
+            resolvedExpression = adaptedResult;
+            return true;
         }
 
         private static bool TryResolveUseMapMarker(

@@ -153,6 +153,15 @@ During build, Mapify resolves the dependency to the registered map (including nu
 
 To force a specific named map, use `UseMap<TSource, TTarget>("Name", x.SourceMember)`.
 
+You can also chain LINQ operators after `UseMap`, for example:
+
+```csharp
+CreateMap<Person, PersonDto>(x => new PersonDto {
+    Addresses = UseMap<IEnumerable<Address>, IEnumerable<AddressDto>>(x.Addresses)
+        .OrderBy(dto => dto.StreetName)
+});
+```
+
 `UseMap` also supports arrays and enumerable types. If a map exists for element types (`TSrc -> TDest`),
 you can use it for collection shapes like `TSrc[] -> TDest[]` and `IEnumerable<TSrc> -> IEnumerable<TDest>`.
 
@@ -215,6 +224,21 @@ Students = UseMap<IEnumerable<Student>, IEnumerable<StudentDto>>(
     "Upper",
     x.Students.Where(s => s.Name != null)
 )
+```
+
+Chaining also works for named maps:
+
+```csharp
+Addresses = UseMap<IEnumerable<Address>, IEnumerable<AddressDto>>("Postal", x.Addresses)
+    .OrderBy(dto => dto.StreetName)
+```
+
+For EF/EF Core projections, if you apply ordering or other sequence operators after `UseMap`, materialize the sequence for stable provider translation:
+
+```csharp
+Addresses = UseMap<IEnumerable<Address>, IEnumerable<AddressDto>>(x.Addresses)
+    .OrderBy(dto => dto.StreetName)
+    .ToList()
 ```
 
 ## Detailed Functionality 📚

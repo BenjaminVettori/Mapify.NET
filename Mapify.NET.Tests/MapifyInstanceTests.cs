@@ -243,6 +243,26 @@ namespace Mapify.NET.Tests {
             public IEnumerable<FilterStudentTarget> Students { get; set; } = Enumerable.Empty<FilterStudentTarget>();
         }
 
+        private class ChainedAddressSource {
+            public string StreetName { get; set; } = string.Empty;
+        }
+
+        private class ChainedAddressTarget {
+            public string StreetName { get; set; } = string.Empty;
+        }
+
+        private class ChainedPersonSource {
+            public IEnumerable<ChainedAddressSource> Addresses { get; set; } = Enumerable.Empty<ChainedAddressSource>();
+        }
+
+        private class ChainedPersonTarget {
+            public IEnumerable<ChainedAddressTarget> Addresses { get; set; } = Enumerable.Empty<ChainedAddressTarget>();
+        }
+
+        private class ChainedNamedPersonTarget {
+            public IEnumerable<ChainedAddressTarget> Addresses { get; set; } = Enumerable.Empty<ChainedAddressTarget>();
+        }
+
         private enum SourceStatus {
             Inactive = 0,
             Active = 1
@@ -441,6 +461,38 @@ namespace Mapify.NET.Tests {
             protected override void Configure() {
                 CreateMap<FilterClassSource, FilterClassTarget>(x => new FilterClassTarget {
                     Students = UseMap<IEnumerable<FilterStudentSource>, IEnumerable<FilterStudentTarget>>(x.Students.Where(s => s.Name != null))
+                });
+            }
+        }
+
+        private class ChainedAddressProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ChainedAddressSource, ChainedAddressTarget>();
+            }
+        }
+
+        private class ChainedPersonProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ChainedPersonSource, ChainedPersonTarget>(x => new ChainedPersonTarget {
+                    Addresses = UseMap<IEnumerable<ChainedAddressSource>, IEnumerable<ChainedAddressTarget>>(x.Addresses)
+                        .OrderBy(dto => dto.StreetName)
+                });
+            }
+        }
+
+        private class ChainedNamedAddressProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ChainedAddressSource, ChainedAddressTarget>("Reverse", x => new ChainedAddressTarget {
+                    StreetName = new string(x.StreetName.Reverse().ToArray())
+                });
+            }
+        }
+
+        private class ChainedNamedPersonProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ChainedPersonSource, ChainedNamedPersonTarget>(x => new ChainedNamedPersonTarget {
+                    Addresses = UseMap<IEnumerable<ChainedAddressSource>, IEnumerable<ChainedAddressTarget>>("Reverse", x.Addresses)
+                        .OrderBy(dto => dto.StreetName)
                 });
             }
         }
@@ -807,6 +859,38 @@ namespace Mapify.NET.Tests {
 
             Assert.Equal(new[] { "ALICE", "BOB" }, mapped.StudentsUpper.Select(x => x.Name).ToArray());
             Assert.Equal(new[] { "alice", "bob" }, mapped.StudentsLower.Select(x => x.Name).ToArray());
+        }
+
+        [Fact]
+        public void Map_UseMapMarker_ShouldAllowChaining_AfterUseMap() {
+            var mapify = new Mapify(new ChainedAddressProfile(), new ChainedPersonProfile());
+
+            var source = new ChainedPersonSource {
+                Addresses = new[] {
+                    new ChainedAddressSource { StreetName = "B-Street" },
+                    new ChainedAddressSource { StreetName = "A-Street" }
+                }
+            };
+
+            var mapped = mapify.Map<ChainedPersonSource, ChainedPersonTarget>(source);
+
+            Assert.Equal(new[] { "A-Street", "B-Street" }, mapped.Addresses.Select(x => x.StreetName).ToArray());
+        }
+
+        [Fact]
+        public void Map_UseMapMarkerNamed_ShouldAllowChaining_AfterUseMap() {
+            var mapify = new Mapify(new ChainedNamedAddressProfile(), new ChainedNamedPersonProfile());
+
+            var source = new ChainedPersonSource {
+                Addresses = new[] {
+                    new ChainedAddressSource { StreetName = "abc" },
+                    new ChainedAddressSource { StreetName = "xyz" }
+                }
+            };
+
+            var mapped = mapify.Map<ChainedPersonSource, ChainedNamedPersonTarget>(source);
+
+            Assert.Equal(new[] { "cba", "zyx" }, mapped.Addresses.Select(x => x.StreetName).ToArray());
         }
     }
 }
