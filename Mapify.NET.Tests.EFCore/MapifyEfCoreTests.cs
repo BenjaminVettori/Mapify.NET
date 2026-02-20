@@ -213,6 +213,91 @@ public class MapifyEfCoreTests {
         Assert.Equal(new[] { "+44-200" }, result[1].Phones.Select(x => x.Number).ToArray());
     }
 
+    [Fact]
+    public void InstanceMapify_UseMap_ShouldAcceptFilterExpressions_InEfCoreProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.People.AddRange(
+            new EfCorePerson {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new EfCoreAddress { City = "London" },
+                Phones = new List<EfCorePhone> {
+                    new EfCorePhone { Number = "+44-100" },
+                    new EfCorePhone { Number = "+44-101" },
+                    new EfCorePhone { Number = "+1-300" }
+                }
+            },
+            new EfCorePerson {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new EfCoreAddress { City = "Manchester" },
+                Phones = new List<EfCorePhone> {
+                    new EfCorePhone { Number = "+44-200" },
+                    new EfCorePhone { Number = "+1-999" }
+                }
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify(new IMapifyProfile[] {
+            new EfCorePhoneProfile(),
+            new EfCorePersonFilteredPhonesProfile()
+        });
+
+        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonFilteredPhonesDto>();
+
+        var result = db.People
+            .OrderBy(x => x.Id)
+            .Select(mapExpr)
+            .ToList();
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(new[] { "+44-100", "+44-101" }, result[0].Students.Select(x => x.Number).ToArray());
+        Assert.Equal(new[] { "+44-200" }, result[1].Students.Select(x => x.Number).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_UseMap_ShouldSupportNamedMappings_InEfCoreProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.People.Add(new EfCorePerson {
+            FirstName = "Ada",
+            LastName = "Lovelace",
+            HomeAddress = new EfCoreAddress { City = "London" },
+            Phones = new List<EfCorePhone> {
+                new EfCorePhone { Number = "+44-100" },
+                new EfCorePhone { Number = "+44-101" }
+            }
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify(new IMapifyProfile[] {
+            new EfCoreNamedPhoneProfile(),
+            new EfCoreNamedPersonProfile()
+        });
+
+        var mapExpr = mapify.GetMap<EfCorePerson, EfCoreNamedPhonesDto>();
+
+        var result = db.People
+            .OrderBy(x => x.Id)
+            .Select(mapExpr)
+            .Single();
+
+        Assert.Equal(new[] { "+44-100", "+44-101" }, result.PhonesRaw.Select(x => x.Number).ToArray());
+        Assert.Equal(new[] { "+44-100 [MASKED]", "+44-101 [MASKED]" }, result.PhonesMasked.Select(x => x.Number).ToArray());
+    }
+
     private sealed class EfCoreMapifyContext(DbContextOptions<EfCoreMapifyContext> options) : DbContext(options) {
         public DbSet<EfCorePerson> People => Set<EfCorePerson>();
         public DbSet<EfCoreAddress> Addresses => Set<EfCoreAddress>();
@@ -276,6 +361,15 @@ public class MapifyEfCoreTests {
         public EfCorePhoneDto[] Phones { get; set; } = Array.Empty<EfCorePhoneDto>();
     }
 
+    private sealed class EfCorePersonFilteredPhonesDto {
+        public IEnumerable<EfCorePhoneDto> Students { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+    }
+
+    private sealed class EfCoreNamedPhonesDto {
+        public IEnumerable<EfCorePhoneDto> PhonesRaw { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+        public IEnumerable<EfCorePhoneDto> PhonesMasked { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+    }
+
     private sealed class EfCorePhoneProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCorePhone, EfCorePhoneDto>();
@@ -302,6 +396,35 @@ public class MapifyEfCoreTests {
         protected override void Configure() {
             CreateMap<EfCorePerson, EfCorePersonImplicitNestedAndArrayDto>(x => new EfCorePersonImplicitNestedAndArrayDto {
                 FullName = x.FirstName + " " + x.LastName
+            });
+        }
+    }
+
+    private sealed class EfCorePersonFilteredPhonesProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCorePersonFilteredPhonesDto>(x => new EfCorePersonFilteredPhonesDto {
+                Students = UseMap<IEnumerable<EfCorePhone>, IEnumerable<EfCorePhoneDto>>(x.Phones.Where(s => s.Number.StartsWith("+44")))
+            });
+        }
+    }
+
+    private sealed class EfCoreNamedPhoneProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePhone, EfCorePhoneDto>("Raw", x => new EfCorePhoneDto {
+                Number = x.Number
+            });
+
+            CreateMap<EfCorePhone, EfCorePhoneDto>("Masked", x => new EfCorePhoneDto {
+                Number = x.Number + " [MASKED]"
+            });
+        }
+    }
+
+    private sealed class EfCoreNamedPersonProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCoreNamedPhonesDto>(x => new EfCoreNamedPhonesDto {
+                PhonesRaw = UseMap<IEnumerable<EfCorePhone>, IEnumerable<EfCorePhoneDto>>("Raw", x.Phones),
+                PhonesMasked = UseMap<IEnumerable<EfCorePhone>, IEnumerable<EfCorePhoneDto>>("Masked", x.Phones)
             });
         }
     }

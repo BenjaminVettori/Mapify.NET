@@ -205,6 +205,44 @@ namespace Mapify.NET.Tests {
             public ElementTarget[] Items { get; set; } = Array.Empty<ElementTarget>();
         }
 
+        private class NamedPerson {
+            public string FirstName { get; set; } = string.Empty;
+            public string LastName { get; set; } = string.Empty;
+        }
+
+        private class NamedStudentSource {
+            public string Name { get; set; } = string.Empty;
+        }
+
+        private class NamedStudentTarget {
+            public string Name { get; set; } = string.Empty;
+        }
+
+        private class NamedClassSource {
+            public IEnumerable<NamedStudentSource> Students { get; set; } = Enumerable.Empty<NamedStudentSource>();
+        }
+
+        private class NamedClassTarget {
+            public IEnumerable<NamedStudentTarget> StudentsUpper { get; set; } = Enumerable.Empty<NamedStudentTarget>();
+            public IEnumerable<NamedStudentTarget> StudentsLower { get; set; } = Enumerable.Empty<NamedStudentTarget>();
+        }
+
+        private class FilterStudentSource {
+            public string? Name { get; set; }
+        }
+
+        private class FilterStudentTarget {
+            public string Name { get; set; } = string.Empty;
+        }
+
+        private class FilterClassSource {
+            public IEnumerable<FilterStudentSource> Students { get; set; } = Enumerable.Empty<FilterStudentSource>();
+        }
+
+        private class FilterClassTarget {
+            public IEnumerable<FilterStudentTarget> Students { get; set; } = Enumerable.Empty<FilterStudentTarget>();
+        }
+
         private enum SourceStatus {
             Inactive = 0,
             Active = 1
@@ -361,6 +399,49 @@ namespace Mapify.NET.Tests {
         private class ImplicitCollectionParentProfile : MapifyProfile {
             protected override void Configure() {
                 CreateMap<ImplicitCollectionParentSource, ImplicitCollectionParentTarget>();
+            }
+        }
+
+        private class NamedPersonValueMapsProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<NamedPerson, string>(x => x.FirstName);
+                CreateMap<NamedPerson, string>("FullName", x => x.FirstName + " " + x.LastName);
+                CreateMap<NamedPerson, string>("Initials", x => x.FirstName.Substring(0, 1) + x.LastName.Substring(0, 1));
+            }
+        }
+
+        private class NamedStudentProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<NamedStudentSource, NamedStudentTarget>("Upper", x => new NamedStudentTarget {
+                    Name = x.Name.ToUpper()
+                });
+
+                CreateMap<NamedStudentSource, NamedStudentTarget>("Lower", x => new NamedStudentTarget {
+                    Name = x.Name.ToLower()
+                });
+            }
+        }
+
+        private class NamedClassProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<NamedClassSource, NamedClassTarget>(x => new NamedClassTarget {
+                    StudentsUpper = UseMap<IEnumerable<NamedStudentSource>, IEnumerable<NamedStudentTarget>>("Upper", x.Students),
+                    StudentsLower = UseMap<IEnumerable<NamedStudentSource>, IEnumerable<NamedStudentTarget>>("Lower", x.Students)
+                });
+            }
+        }
+
+        private class FilterStudentProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<FilterStudentSource, FilterStudentTarget>();
+            }
+        }
+
+        private class FilterClassProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<FilterClassSource, FilterClassTarget>(x => new FilterClassTarget {
+                    Students = UseMap<IEnumerable<FilterStudentSource>, IEnumerable<FilterStudentTarget>>(x.Students.Where(s => s.Name != null))
+                });
             }
         }
 
@@ -654,6 +735,78 @@ namespace Mapify.NET.Tests {
             var mapped = mapify.Map<ImplicitCollectionParentSource, ImplicitCollectionParentTarget>(source);
 
             Assert.Equal(new[] { 2, 3 }, mapped.Items.Select(x => x.Value).ToArray());
+        }
+
+        [Fact]
+        public void Map_UseMapMarker_ShouldAcceptSourceExpressions_SuchAsWhereFilters() {
+            var mapify = new Mapify(new FilterClassProfile(), new FilterStudentProfile());
+
+            var source = new FilterClassSource {
+                Students = new[] {
+                    new FilterStudentSource { Name = "Alice" },
+                    new FilterStudentSource { Name = null },
+                    new FilterStudentSource { Name = "Bob" }
+                }
+            };
+
+            var mapped = mapify.Map<FilterClassSource, FilterClassTarget>(source);
+
+            Assert.Equal(new[] { "Alice", "Bob" }, mapped.Students.Select(x => x.Name).ToArray());
+        }
+
+        [Fact]
+        public void Map_ShouldSupportNamedMappings_ForSameSourceAndTargetTypes() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+            var person = new NamedPerson { FirstName = "Ada", LastName = "Lovelace" };
+
+            var defaultValue = mapify.Map<NamedPerson, string>(person);
+            var fullName = mapify.Map<NamedPerson, string>(person, "FullName");
+            var initials = mapify.Map<NamedPerson, string>(person, "Initials");
+
+            Assert.Equal("Ada", defaultValue);
+            Assert.Equal("Ada Lovelace", fullName);
+            Assert.Equal("AL", initials);
+        }
+
+        [Fact]
+        public void GetMap_ShouldReturnNamedMapping_WhenNameIsProvided() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+            var person = new NamedPerson { FirstName = "Grace", LastName = "Hopper" };
+
+            var fullNameMap = mapify.GetMap<NamedPerson, string>("FullName");
+            var mapped = fullNameMap.Compile().Invoke(person);
+
+            Assert.Equal("Grace Hopper", mapped);
+        }
+
+        [Fact]
+        public void Map_Named_ShouldThrow_WhenNamedMappingIsMissing() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+            var person = new NamedPerson { FirstName = "Katherine", LastName = "Johnson" };
+
+            Assert.Throws<ArgumentException>(() => mapify.Map<NamedPerson, string>(person, "UnknownName"));
+        }
+
+        [Fact]
+        public void Constructor_ShouldThrow_WhenDuplicateNamedMappingIsRegistered() {
+            Assert.Throws<ArgumentException>(() => new Mapify(new NamedPersonValueMapsProfile(), new NamedPersonValueMapsProfile()));
+        }
+
+        [Fact]
+        public void Map_UseMapMarker_ShouldSupportNamedMappings() {
+            var mapify = new Mapify(new NamedClassProfile(), new NamedStudentProfile());
+
+            var source = new NamedClassSource {
+                Students = new[] {
+                    new NamedStudentSource { Name = "Alice" },
+                    new NamedStudentSource { Name = "Bob" }
+                }
+            };
+
+            var mapped = mapify.Map<NamedClassSource, NamedClassTarget>(source);
+
+            Assert.Equal(new[] { "ALICE", "BOB" }, mapped.StudentsUpper.Select(x => x.Name).ToArray());
+            Assert.Equal(new[] { "alice", "bob" }, mapped.StudentsLower.Select(x => x.Name).ToArray());
         }
     }
 }

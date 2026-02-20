@@ -81,6 +81,30 @@ public class QueryProfile : MapifyProfile {
     }
 }
 
+// Named maps: same source/target pair, different map names.
+public class PersonValueProfile : MapifyProfile {
+    protected override void Configure() {
+        // default map for Person -> string
+        CreateMap<Person, string>(x => x.FirstName);
+
+        // named maps for the same Person -> string type pair
+        CreateMap<Person, string>("FullName", x => x.FirstName + " " + x.LastName);
+        CreateMap<Person, string>("Initials", x => x.FirstName.Substring(0, 1) + x.LastName.Substring(0, 1));
+    }
+}
+
+// UseMap also supports named maps in profile initializers.
+public class StudentProfile : MapifyProfile {
+    protected override void Configure() {
+        CreateMap<Student, StudentDto>("Raw", x => new StudentDto { Name = x.Name });
+        CreateMap<Student, StudentDto>("Upper", x => new StudentDto { Name = x.Name.ToUpper() });
+
+        CreateMap<Classroom, ClassroomDto>(x => new ClassroomDto {
+            Students = UseMap<IEnumerable<Student>, IEnumerable<StudentDto>>("Upper", x.Students)
+        });
+    }
+}
+
 // If source and destination property names differ, pass the source explicitly.
 public class NumberProfile : MapifyProfile {
     protected override void Configure() {
@@ -127,6 +151,8 @@ Map building is deferred until all profiles are registered, so unordered registr
 When you need explicit nested map usage in a profile initializer, use `UseMap<TSource, TTarget>(x.SourceMember)`.
 During build, Mapify resolves the dependency to the registered map (including nullable variants).
 
+To force a specific named map, use `UseMap<TSource, TTarget>("Name", x.SourceMember)`.
+
 `UseMap` also supports arrays and enumerable types. If a map exists for element types (`TSrc -> TDest`),
 you can use it for collection shapes like `TSrc[] -> TDest[]` and `IEnumerable<TSrc> -> IEnumerable<TDest>`.
 
@@ -137,13 +163,37 @@ var mapper = provider.GetRequiredService<IMapify>();
 
 var dto = mapper.Map<Person, PersonDto>(person);
 
+// named map execution
+var fullName = mapper.Map<Person, string>(person, "FullName");
+
 var existing = new PersonDto();
 mapper.Map(person, existing);
+
+// named map-to-existing execution
+mapper.Map(person, existing, "SomeNamedMap");
 ```
 
 ### 4. Use the instance mapper with Entity Framework (`IQueryable`)
 
 `IMapify.GetMap<TSource, TTarget>()` returns the expression for projections.
+
+You can also resolve a specific named map with `IMapify.GetMap<TSource, TTarget>("Name")`.
+
+`UseMap` works with expressions too (not only direct properties). For example, you can filter children before mapping:
+
+```csharp
+public class StudentProfile : MapifyProfile {
+    protected override void Configure() {
+        CreateMap<Student, StudentDto>();
+
+        CreateMap<Classroom, ClassroomDto>(x => new ClassroomDto {
+            Students = UseMap<IEnumerable<Student>, IEnumerable<StudentDto>>(
+                x.Students.Where(s => s.Name != null)
+            )
+        });
+    }
+}
+```
 
 ```csharp
 public async Task<IEnumerable<PersonDto>> GetPersonDtosAsync(int skip, int take, CancellationToken cancellationToken = default) {
@@ -156,6 +206,15 @@ public async Task<IEnumerable<PersonDto>> GetPersonDtosAsync(int skip, int take,
         .Take(take)
         .ToArrayAsync(cancellationToken);
 }
+```
+
+The same pattern works for named maps as well:
+
+```csharp
+Students = UseMap<IEnumerable<Student>, IEnumerable<StudentDto>>(
+    "Upper",
+    x.Students.Where(s => s.Name != null)
+)
 ```
 
 ## Detailed Functionality 📚
@@ -173,6 +232,27 @@ When `CreateMap<TSource, TTarget>()` is called, Mapify automatically generates b
 
     If a map already exists for a same-name property type pair (e.g. `Address -> AddressDto`),
     Mapify uses that map implicitly before falling back to direct assignment.
+
+### Named Mappings
+
+Named mappings let you register multiple mappings for the same source/target type pair.
+
+```csharp
+public class PersonValueProfile : MapifyProfile {
+    protected override void Configure() {
+        CreateMap<Person, string>("FullName", x => x.FirstName + " " + x.LastName);
+        CreateMap<Person, string>("Initials", x => x.FirstName.Substring(0, 1) + x.LastName.Substring(0, 1));
+    }
+}
+
+var fullName = mapify.Map<Person, string>(person, "FullName");
+var initials = mapify.Map<Person, string>(person, "Initials");
+```
+
+Rules:
+* A default map and named maps can coexist for the same `TSource -> TTarget`.
+* Each `(TSource, TTarget, Name)` combination must be unique.
+* `UseMap` can target named maps via `UseMap<TSource, TTarget>("Name", sourceExpression)`.
 
 ### Static API (advanced scenarios)
 

@@ -252,7 +252,7 @@ namespace Mapify.NET {
 
         internal static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
             Expression<Func<TSource, TDestination>>? partial,
-            Func<Type, Type, LambdaExpression?>? existingMapResolver
+            Func<Type, Type, string?, LambdaExpression?>? existingMapResolver
         ) {
             var baseParam = Expression.Parameter(typeof(TSource), "x");
 
@@ -311,7 +311,7 @@ namespace Mapify.NET {
         /// <returns></returns>
         private static MemberAssignment MapPartialBinding(
             MemberAssignment partialBinding,
-            Func<Type, Type, LambdaExpression?>? existingMapResolver
+            Func<Type, Type, string?, LambdaExpression?>? existingMapResolver
         ) {
             var expr = partialBinding.Expression;
 
@@ -338,7 +338,7 @@ namespace Mapify.NET {
 
         private static bool TryResolveUseMapMarker(
             MemberAssignment partialBinding,
-            Func<Type, Type, LambdaExpression?>? existingMapResolver,
+            Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
             out MemberAssignment mappedBinding
         ) {
             mappedBinding = null!;
@@ -364,13 +364,23 @@ namespace Mapify.NET {
             var markerSourceType = genericArgs[0];
             var markerTargetType = genericArgs[1];
 
-            if (methodCall.Arguments.Count != 1) {
+            string? markerMapName = null;
+            Expression sourceAccess;
+
+            if (methodCall.Arguments.Count == 1) {
+                sourceAccess = methodCall.Arguments[0];
+            } else if (methodCall.Arguments.Count == 2) {
+                if (methodCall.Arguments[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
+                    throw new InvalidOperationException($"{UseMapMarkerName} name argument must be a non-empty constant string.");
+                }
+
+                markerMapName = mapName;
+                sourceAccess = methodCall.Arguments[1];
+            } else {
                 throw new InvalidOperationException($"{UseMapMarkerName} requires an explicit source argument. Use {UseMapMarkerName}<TSource, TTarget>(x.Property). For same-name properties you can omit {UseMapMarkerName} and rely on implicit nested map resolution.");
             }
 
-            var sourceAccess = methodCall.Arguments[0];
-
-            if (!TryBuildMappedExpression(sourceAccess, markerSourceType, markerTargetType, existingMapResolver, out var mappedBody, out var sourceNullCheck)) {
+            if (!TryBuildMappedExpression(sourceAccess, markerSourceType, markerTargetType, existingMapResolver, markerMapName, out var mappedBody, out var sourceNullCheck)) {
                 throw new InvalidOperationException($"No mapping found for {markerSourceType.FullName} -> {markerTargetType.FullName} required by {UseMapMarkerName} on property '{destProp.Name}'.");
             }
 
@@ -415,7 +425,7 @@ namespace Mapify.NET {
             }
 
             var parameterCount = genericDefinition.GetParameters().Length;
-            return parameterCount == 1;
+            return parameterCount == 1 || parameterCount == 2;
         }
 
         /// <summary>
@@ -504,7 +514,7 @@ namespace Mapify.NET {
             ParameterExpression baseParam,
             PropertyInfo sourceProp,
             PropertyInfo destProp,
-            Func<Type, Type, LambdaExpression?>? existingMapResolver,
+            Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
             out MemberAssignment binding
         ) {
             binding = null!;
@@ -515,7 +525,7 @@ namespace Mapify.NET {
 
             var sourceAccess = Expression.Property(baseParam, sourceProp);
 
-            if (!TryBuildMappedExpression(sourceAccess, sourceProp.PropertyType, destProp.PropertyType, existingMapResolver, out var adaptedResult, out var sourceNullCheck)) {
+            if (!TryBuildMappedExpression(sourceAccess, sourceProp.PropertyType, destProp.PropertyType, existingMapResolver, null, out var adaptedResult, out var sourceNullCheck)) {
                 return false;
             }
 
@@ -536,18 +546,19 @@ namespace Mapify.NET {
             Expression sourceAccess,
             Type sourceType,
             Type destinationType,
-            Func<Type, Type, LambdaExpression?> resolver,
+            Func<Type, Type, string?, LambdaExpression?> resolver,
+            string? preferredMapName,
             out Expression mappedResult,
             out Expression? sourceNullCheck
         ) {
             mappedResult = null!;
             sourceNullCheck = null;
 
-            if (TryBuildDirectMappedExpression(sourceAccess, sourceType, destinationType, resolver, out mappedResult, out sourceNullCheck)) {
+            if (TryBuildDirectMappedExpression(sourceAccess, sourceType, destinationType, resolver, preferredMapName, out mappedResult, out sourceNullCheck)) {
                 return true;
             }
 
-            if (TryBuildEnumerableMappedExpression(sourceAccess, sourceType, destinationType, resolver, out mappedResult, out sourceNullCheck)) {
+            if (TryBuildEnumerableMappedExpression(sourceAccess, sourceType, destinationType, resolver, preferredMapName, out mappedResult, out sourceNullCheck)) {
                 return true;
             }
 
@@ -558,14 +569,15 @@ namespace Mapify.NET {
             Expression sourceAccess,
             Type sourceType,
             Type destinationType,
-            Func<Type, Type, LambdaExpression?> resolver,
+            Func<Type, Type, string?, LambdaExpression?> resolver,
+            string? preferredMapName,
             out Expression mappedResult,
             out Expression? sourceNullCheck
         ) {
             mappedResult = null!;
             sourceNullCheck = null;
 
-            var mapExpr = ResolveMapForNullableVariants(sourceType, destinationType, resolver);
+            var mapExpr = ResolveMapForNullableVariants(sourceType, destinationType, resolver, preferredMapName);
             if (mapExpr == null || mapExpr.Parameters.Count != 1 || mapExpr.ReturnType == typeof(void)) {
                 return false;
             }
@@ -587,7 +599,8 @@ namespace Mapify.NET {
             Expression sourceAccess,
             Type sourceType,
             Type destinationType,
-            Func<Type, Type, LambdaExpression?> resolver,
+            Func<Type, Type, string?, LambdaExpression?> resolver,
+            string? preferredMapName,
             out Expression mappedResult,
             out Expression? sourceNullCheck
         ) {
@@ -600,7 +613,7 @@ namespace Mapify.NET {
                 return false;
             }
 
-            var elementMapExpr = ResolveMapForNullableVariants(sourceElementType, destinationElementType, resolver);
+            var elementMapExpr = ResolveMapForNullableVariants(sourceElementType, destinationElementType, resolver, preferredMapName);
             var itemParam = Expression.Parameter(sourceAccessElementType, "e");
             Expression adaptedItemResult;
             Expression? itemNullCheck;
@@ -759,16 +772,17 @@ namespace Mapify.NET {
         private static LambdaExpression? ResolveMapForNullableVariants(
             Type sourceType,
             Type destinationType,
-            Func<Type, Type, LambdaExpression?> resolver
+            Func<Type, Type, string?, LambdaExpression?> resolver,
+            string? preferredMapName
         ) {
             var sourceCoreType = Nullable.GetUnderlyingType(sourceType) ?? sourceType;
             var destinationCoreType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
 
             // Prefer exact first, then lifted variants.
-            return resolver(sourceType, destinationType)
-                ?? resolver(sourceType, destinationCoreType)
-                ?? resolver(sourceCoreType, destinationType)
-                ?? resolver(sourceCoreType, destinationCoreType);
+            return resolver(sourceType, destinationType, preferredMapName)
+                ?? resolver(sourceType, destinationCoreType, preferredMapName)
+                ?? resolver(sourceCoreType, destinationType, preferredMapName)
+                ?? resolver(sourceCoreType, destinationCoreType, preferredMapName);
         }
 
         private static bool TryAdaptSourceForMap(
@@ -860,7 +874,11 @@ namespace Mapify.NET {
                 ? Expression.Constant(null, type)
                 : Expression.Default(type);
 
-        private static LambdaExpression? TryGetRegisteredMap(Type sourceType, Type destinationType) {
+        private static LambdaExpression? TryGetRegisteredMap(Type sourceType, Type destinationType, string? name) {
+            if (!string.IsNullOrWhiteSpace(name)) {
+                return null;
+            }
+
             var key = new Tuple<Type, Type>(sourceType, destinationType);
             return Converters.TryGetValue(key, out var existingConverter) ? existingConverter : null;
         }
