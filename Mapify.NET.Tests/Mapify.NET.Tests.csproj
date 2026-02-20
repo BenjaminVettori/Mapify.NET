@@ -23,6 +23,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Mapify\Mapify.NET.csproj" />
+    <ProjectReference Include="..\Mapify.TestProfiles.ModuleA\Mapify.TestProfiles.ModuleA.csproj" />
+    <ProjectReference Include="..\Mapify.TestProfiles.ModuleB\Mapify.TestProfiles.ModuleB.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -69,7 +69,7 @@ public static class PersonMappings {
         Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
             Name = $"{p.FirstName} {p.LastName}",
              // Invoke allows using other maps inside this expression (requires LINQKit)
-            Address = AddressMappings.AddressToAddressDto.Invoke(p.Address)
+            MainAddress = AddressMappings.AddressToAddressDto.Invoke(p.MainAddress)
         });
 }
 
@@ -177,6 +177,18 @@ public class PersonProfile : MapifyProfile {
     }
 }
 
+// You can also keep the returned expression for composition in the same profile.
+public class QueryProfile : MapifyProfile {
+    protected override void Configure() {
+        var addressMap = CreateMap<Address, AddressDto>();
+
+        CreateMap<Person, PersonDto>(p => new PersonDto {
+            Name = p.FirstName + " " + p.LastName,
+            MainAddress = addressMap.Invoke(p.MainAddress)
+        });
+    }
+}
+
 var services = new ServiceCollection();
 
 // Scans the given assemblies for all IMapifyProfile implementations,
@@ -204,6 +216,9 @@ var provider = services.BuildServiceProvider();
 var defaultMapper = provider.GetRequiredService<IMapify>();
 var queryMapper = provider.GetMapify("queries");
 ```
+
+`CreateMap<TSource, TTarget>(...)` inside `MapifyProfile` returns the registered expression.
+This lets you compose maps inside a profile without duplicating expressions.
 
 ## Detailed Functionality 📚
 

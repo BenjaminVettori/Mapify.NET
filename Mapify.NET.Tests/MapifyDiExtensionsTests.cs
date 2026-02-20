@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Mapify.TestProfiles.ModuleA;
+using Mapify.TestProfiles.ModuleB;
 
 namespace Mapify.NET.Tests;
 
@@ -81,6 +83,49 @@ public class MapifyDiExtensionsTests : IClassFixture<MapifyDiExtensionsTests.Map
 
         Assert.Throws<ArgumentException>(() => defaultMapper.Map<DiSourceB, DiTargetB>(new DiSourceB { Text = "x" }));
         Assert.Throws<ArgumentException>(() => namedMapper.Map<DiSourceA, DiTargetA>(new DiSourceA { Value = 1 }));
+    }
+
+    [Fact]
+    public void AddMapify_CalledMultipleTimes_ShouldKeepSingleMapperAndAccumulateProfiles() {
+        var services = new ServiceCollection();
+
+        // Simulate first project registration
+        services.AddMapifyProfile<DiProfileA>();
+        services.AddMapify(ServiceLifetime.Singleton);
+
+        // Simulate another project registering additional profiles later
+        services.AddMapifyProfiles(typeof(DiProfileB).Assembly);
+        services.AddMapify(ServiceLifetime.Singleton);
+
+        Assert.Single(services, x => x.ServiceType == typeof(IMapify));
+
+        using var provider = services.BuildServiceProvider();
+        var mapper = provider.GetRequiredService<IMapify>();
+
+        var mappedA = mapper.Map<DiSourceA, DiTargetA>(new DiSourceA { Value = 7 });
+        Assert.Equal(7, mappedA.Value);
+
+        var mappedB = mapper.Map<DiSourceB, DiTargetB>(new DiSourceB { Text = "added-later" });
+        Assert.Equal("added-later", mappedB.Text);
+    }
+
+    [Fact]
+    public void AddMapify_WithAssemblyOverload_CalledConsecutively_ShouldAccumulateProfiles() {
+        var services = new ServiceCollection();
+
+        services.AddMapify(typeof(ModuleAProfile).Assembly);
+        services.AddMapify(typeof(ModuleBProfile).Assembly);
+
+        Assert.Single(services, x => x.ServiceType == typeof(IMapify));
+
+        using var provider = services.BuildServiceProvider();
+        var mapper = provider.GetRequiredService<IMapify>();
+
+        var mappedA = mapper.Map<ModuleASource, ModuleATarget>(new ModuleASource { Value = 11 });
+        Assert.Equal(11, mappedA.Value);
+
+        var mappedB = mapper.Map<ModuleBSource, ModuleBTarget>(new ModuleBSource { Text = "module-b" });
+        Assert.Equal("module-b", mappedB.Text);
     }
 
     public class DiSourceA {
