@@ -371,6 +371,42 @@ public class MapifyNetFrameworkEf6Tests {
         }
     }
 
+    [Fact]
+    public void InstanceMapify_UseMap_ShouldSupportCalculations_InEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" }
+            });
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new Ef6Address { City = "Manchester" }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify(new IMapifyProfile[] {
+                new Ef6IntIdentityProfile(),
+                new Ef6PersonCalculationProfile()
+            });
+
+            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonCalculationDto>();
+
+            var result = db.People
+                .OrderBy(x => x.Id)
+                .Select(mapExpr)
+                .ToList();
+
+            Assert.All(result, x => Assert.Equal(x.Id * 365, x.AgeInDays));
+        }
+    }
+
     public class Ef6MapifyContext : DbContext {
         public Ef6MapifyContext(DbConnection connection)
             : base(connection, true) {
@@ -456,6 +492,11 @@ public class MapifyNetFrameworkEf6Tests {
         public IEnumerable<Ef6PhoneDto> PhonesOrdered { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
     }
 
+    public class Ef6PersonCalculationDto {
+        public int Id { get; set; }
+        public int AgeInDays { get; set; }
+    }
+
     private class Ef6PhoneProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<Ef6Phone, Ef6PhoneDto>();
@@ -531,6 +572,20 @@ public class MapifyNetFrameworkEf6Tests {
                 PhonesOrdered = UseMap<IEnumerable<Ef6Phone>, IEnumerable<Ef6PhoneDto>>("Masked", x.Phones)
                     .OrderBy(dto => dto.Number)
                     .ToList()
+            });
+        }
+    }
+
+    private class Ef6IntIdentityProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<int, int>(x => x);
+        }
+    }
+
+    private class Ef6PersonCalculationProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6PersonCalculationDto>(x => new Ef6PersonCalculationDto {
+                AgeInDays = 365 * UseMap<int, int>(x.Id)
             });
         }
     }

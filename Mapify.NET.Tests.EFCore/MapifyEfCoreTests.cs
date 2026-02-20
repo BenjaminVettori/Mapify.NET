@@ -367,6 +367,44 @@ public class MapifyEfCoreTests {
         Assert.Equal(new[] { "+44-100 [MASKED]", "+44-300 [MASKED]" }, result.PhonesOrdered.Select(x => x.Number).ToArray());
     }
 
+    [Fact]
+    public void InstanceMapify_UseMap_ShouldSupportCalculations_InEfCoreProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.People.AddRange(
+            new EfCorePerson {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new EfCoreAddress { City = "London" }
+            },
+            new EfCorePerson {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new EfCoreAddress { City = "Manchester" }
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify(new IMapifyProfile[] {
+            new EfCoreIntIdentityProfile(),
+            new EfCorePersonCalculationProfile()
+        });
+
+        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonCalculationDto>();
+
+        var result = db.People
+            .OrderBy(x => x.Id)
+            .Select(mapExpr)
+            .ToList();
+
+        Assert.All(result, x => Assert.Equal(x.Id * 365, x.AgeInDays));
+    }
+
     private sealed class EfCoreMapifyContext(DbContextOptions<EfCoreMapifyContext> options) : DbContext(options) {
         public DbSet<EfCorePerson> People => Set<EfCorePerson>();
         public DbSet<EfCoreAddress> Addresses => Set<EfCoreAddress>();
@@ -441,6 +479,11 @@ public class MapifyEfCoreTests {
 
     private sealed class EfCorePersonChainedPhonesDto {
         public IEnumerable<EfCorePhoneDto> PhonesOrdered { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+    }
+
+    private sealed class EfCorePersonCalculationDto {
+        public int Id { get; set; }
+        public int AgeInDays { get; set; }
     }
 
     private sealed class EfCorePhoneProfile : MapifyProfile {
@@ -518,6 +561,20 @@ public class MapifyEfCoreTests {
                 PhonesOrdered = UseMap<IEnumerable<EfCorePhone>, IEnumerable<EfCorePhoneDto>>("Masked", x.Phones)
                     .OrderBy(dto => dto.Number)
                     .ToList()
+            });
+        }
+    }
+
+    private sealed class EfCoreIntIdentityProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<int, int>(x => x);
+        }
+    }
+
+    private sealed class EfCorePersonCalculationProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCorePersonCalculationDto>(x => new EfCorePersonCalculationDto {
+                AgeInDays = 365 * UseMap<int, int>(x.Id)
             });
         }
     }

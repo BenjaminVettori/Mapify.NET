@@ -263,6 +263,30 @@ namespace Mapify.NET.Tests {
             public IEnumerable<ChainedAddressTarget> Addresses { get; set; } = Enumerable.Empty<ChainedAddressTarget>();
         }
 
+        private class CalculationPersonSource {
+            public int AgeInYears { get; set; }
+        }
+
+        private class CalculationPersonTarget {
+            public int AgeInDays { get; set; }
+        }
+
+        private class TemperatureMeasurementSource {
+            public decimal Fahrenheit { get; set; }
+        }
+
+        private class TemperatureMeasurementDto {
+            public decimal Fahrenheit { get; set; }
+        }
+
+        private class TemperatureSeriesSource {
+            public IEnumerable<TemperatureMeasurementSource> Measurements { get; set; } = Enumerable.Empty<TemperatureMeasurementSource>();
+        }
+
+        private class TemperatureSeriesTarget {
+            public decimal MaxTemperatureCelsius { get; set; }
+        }
+
         private enum SourceStatus {
             Inactive = 0,
             Active = 1
@@ -493,6 +517,38 @@ namespace Mapify.NET.Tests {
                 CreateMap<ChainedPersonSource, ChainedNamedPersonTarget>(x => new ChainedNamedPersonTarget {
                     Addresses = UseMap<IEnumerable<ChainedAddressSource>, IEnumerable<ChainedAddressTarget>>("Reverse", x.Addresses)
                         .OrderBy(dto => dto.StreetName)
+                });
+            }
+        }
+
+        private class CalculationNumberProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<int, int>(x => x);
+            }
+        }
+
+        private class CalculationPersonProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<CalculationPersonSource, CalculationPersonTarget>(x => new CalculationPersonTarget {
+                    AgeInDays = 365 * UseMap<int, int>(x.AgeInYears)
+                });
+            }
+        }
+
+        private class TemperatureMeasurementProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<TemperatureMeasurementSource, TemperatureMeasurementDto>();
+            }
+        }
+
+        private class TemperatureSeriesProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<TemperatureSeriesSource, TemperatureSeriesTarget>(x => new TemperatureSeriesTarget {
+                    MaxTemperatureCelsius = (
+                        UseMap<IEnumerable<TemperatureMeasurementSource>, IEnumerable<TemperatureMeasurementDto>>(x.Measurements)
+                            .OrderBy(m => m.Fahrenheit)
+                            .Max(m => m.Fahrenheit)
+                        - 32m) * 5m / 9m
                 });
             }
         }
@@ -891,6 +947,34 @@ namespace Mapify.NET.Tests {
             var mapped = mapify.Map<ChainedPersonSource, ChainedNamedPersonTarget>(source);
 
             Assert.Equal(new[] { "cba", "zyx" }, mapped.Addresses.Select(x => x.StreetName).ToArray());
+        }
+
+        [Fact]
+        public void Map_UseMapMarker_ShouldSupportCalculations() {
+            var mapify = new Mapify(new CalculationNumberProfile(), new CalculationPersonProfile());
+
+            var mapped = mapify.Map<CalculationPersonSource, CalculationPersonTarget>(new CalculationPersonSource {
+                AgeInYears = 2
+            });
+
+            Assert.Equal(730, mapped.AgeInDays);
+        }
+
+        [Fact]
+        public void Map_UseMapMarker_ShouldSupportComplexCalculation_WithOrderingAndMax() {
+            var mapify = new Mapify(new TemperatureMeasurementProfile(), new TemperatureSeriesProfile());
+
+            var source = new TemperatureSeriesSource {
+                Measurements = new[] {
+                    new TemperatureMeasurementSource { Fahrenheit = 50m },
+                    new TemperatureMeasurementSource { Fahrenheit = 41m },
+                    new TemperatureMeasurementSource { Fahrenheit = 68m }
+                }
+            };
+
+            var mapped = mapify.Map<TemperatureSeriesSource, TemperatureSeriesTarget>(source);
+
+            Assert.Equal(20m, mapped.MaxTemperatureCelsius);
         }
     }
 }

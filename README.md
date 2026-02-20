@@ -165,6 +165,22 @@ CreateMap<Person, PersonDto>(x => new PersonDto {
 `UseMap` also supports arrays and enumerable types. If a map exists for element types (`TSrc -> TDest`),
 you can use it for collection shapes like `TSrc[] -> TDest[]` and `IEnumerable<TSrc> -> IEnumerable<TDest>`.
 
+This also applies to **named** maps: if `UseMap` is called with a name for a collection shape,
+Mapify resolves the named map for the individual element types.
+
+```csharp
+CreateMap<Address, AddressDto>("Postal", x => new AddressDto {
+    StreetName = x.StreetName
+});
+
+CreateMap<Person, PersonDto>(x => new PersonDto {
+    Addresses = UseMap<IEnumerable<Address>, IEnumerable<AddressDto>>("Postal", x.Addresses)
+        .OrderBy(dto => dto.StreetName)
+});
+```
+
+In this example, Mapify applies the named element map `Address -> AddressDto` with name `"Postal"` for each item.
+
 ### 3. Use the instance mapper in-memory
 
 ```csharp
@@ -224,6 +240,25 @@ Students = UseMap<IEnumerable<Student>, IEnumerable<StudentDto>>(
     "Upper",
     x.Students.Where(s => s.Name != null)
 )
+```
+
+`UseMap` can also be used inside calculations. For example, map measurements first,
+then take the maximum Fahrenheit value and convert it to Celsius:
+
+```csharp
+public class MeasurementProfile : MapifyProfile {
+    protected override void Configure() {
+        CreateMap<Measurement, MeasurementDto>();
+
+        CreateMap<WeatherSample, WeatherSampleDto>(x => new WeatherSampleDto {
+            MaxTemperatureCelsius = (
+                UseMap<IEnumerable<Measurement>, IEnumerable<MeasurementDto>>(x.Measurements)
+                    .OrderBy(m => m.Fahrenheit)
+                    .Max(m => m.Fahrenheit)
+                - 32m) * 5m / 9m
+        });
+    }
+}
 ```
 
 Chaining also works for named maps:
