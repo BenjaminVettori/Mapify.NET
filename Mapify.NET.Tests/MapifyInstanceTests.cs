@@ -54,8 +54,8 @@ namespace Mapify.NET.Tests {
 
         private class ValueMapProfile : MapifyProfile {
             protected override void Configure() {
-                AddMap<NameSource, string>(x => x.Name);
-                AddMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
+                CreateMap<NameSource, string>(x => x.Name);
+                CreateMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
             }
         }
 

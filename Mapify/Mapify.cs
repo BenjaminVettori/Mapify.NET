@@ -34,11 +34,18 @@ namespace Mapify.NET {
             _useDefaultMapIfTypeMapIsMissing = value;
         }
 
-        void IMapifyConfigurator.CreateAndAddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial) {
-            ((IMapifyConfigurator)this).AddMap<TSource, TTarget>(Mapper.CreateMap(partial));
+        Expression<Func<TSource, TTarget>> IMapifyConfigurator.CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial) {
+            if (partial != null && partial.Body is not MemberInitExpression) {
+                AddMap(partial);
+                return partial;
+            }
+
+            var map = Mapper.CreateMap(partial);
+            AddMap(map);
+            return map;
         }
 
-        void IMapifyConfigurator.AddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>> mappingExpression) {
+        private void AddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>> mappingExpression) {
             var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (_converters.ContainsKey(key)) {
                 throw new ArgumentException($"There already exists a mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}). There can only be one mapping for each combination of TSource and TTarget.");
@@ -52,7 +59,7 @@ namespace Mapify.NET {
             }
         }
 
-        private Expression<Func<TSource, TTarget>> GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
+        public Expression<Func<TSource, TTarget>> GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
             var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (_converters.TryGetValue(key, out var existingConverter)) {
                 return (Expression<Func<TSource, TTarget>>)existingConverter;

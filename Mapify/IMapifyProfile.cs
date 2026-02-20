@@ -5,9 +5,7 @@ namespace Mapify.NET {
     }
 
     internal interface IMapifyConfigurator {
-        void CreateAndAddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null);
-
-        void AddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>> mappingExpression);
+        Expression<Func<TSource, TTarget>> CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null);
     }
 
     public abstract class MapifyProfile : IMapifyProfile {
@@ -24,20 +22,12 @@ namespace Mapify.NET {
 
         protected abstract void Configure();
 
-        protected void CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null) {
+        protected Expression<Func<TSource, TTarget>> CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null) {
             if (_configurator == null) {
                 throw new InvalidOperationException("CreateMap can only be called while configuring a profile.");
             }
 
-            _configurator.CreateAndAddMap(partial);
-        }
-
-        protected void AddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>> mappingExpression) {
-            if (_configurator == null) {
-                throw new InvalidOperationException("AddMap can only be called while configuring a profile.");
-            }
-
-            _configurator.AddMap(mappingExpression);
+            return _configurator.CreateMap(partial);
         }
     }
 }
