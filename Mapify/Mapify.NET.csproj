@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <PackageId>Mapify.NET</PackageId>
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
     <Authors>Benjamin Vettori</Authors>
     <Title>Mapify.NET</Title>
     <Description>A simple mapper library which uses static expressions to map entities in memory or in database with entity framework if combined with LinqKit</Description>
