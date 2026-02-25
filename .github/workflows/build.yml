@@ -7,6 +7,10 @@ on:
     types:
       - completed
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   build:
     if: github.event.workflow_run.conclusion == 'success'
@@ -42,13 +46,13 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build Mapify/Mapify.NET.csproj -c Release --no-restore /p:ContinuousIntegrationBuild=true /p:PackageVersion=${{ steps.gitversion.outputs.semVer }} /p:GeneratePackageOnBuild=true /p:PackageOutputPath=./artifacts
+        run: dotnet build Mapify/Mapify.NET.csproj -c Release --no-restore /p:ContinuousIntegrationBuild=true /p:PackageVersion=${{ steps.gitversion.outputs.semVer }} /p:GeneratePackageOnBuild=true
 
       - name: Log package details
         run: |
           echo "GitVersion: ${{ steps.gitversion.outputs.semVer }}"
           echo "Packages:"
-          dir artifacts
+          dir Mapify/bin/Release/*.nupkg
 
       - name: Tag release
         run: |
@@ -57,5 +61,5 @@ jobs:
           git tag -a "v${{ steps.gitversion.outputs.semVer }}" -m "Release v${{ steps.gitversion.outputs.semVer }}"
           git push origin "v${{ steps.gitversion.outputs.semVer }}"
 
-      # - name: Push NuGet
-      #   run: dotnet nuget push "artifacts/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Publish NuGet
+        run: dotnet nuget push "Mapify/bin/Release/*.nupkg" --source https://api.nuget.org/v3/index.json --skip-duplicate
