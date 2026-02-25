@@ -41,8 +41,8 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Pack
-        run: dotnet pack Mapify/Mapify.NET.csproj -c Release -o ./artifacts /p:PackageVersion=${{ steps.gitversion.outputs.semVer }} /p:ContinuousIntegrationBuild=true
+      - name: Build
+        run: dotnet build Mapify/Mapify.NET.csproj -c Release --no-restore /p:ContinuousIntegrationBuild=true /p:PackageVersion=${{ steps.gitversion.outputs.semVer }} /p:GeneratePackageOnBuild=true /p:PackageOutputPath=./artifacts
 
       - name: Log package details
         run: |
