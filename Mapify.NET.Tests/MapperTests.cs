@@ -369,7 +369,7 @@ namespace Mapify.NET.Tests
             Assert.Equal(3, r2.Number!.Value.Value);
 
             Assert.Equal(4, r3WithValue.Number.Value);
-            Assert.Equal(default(NumberTarget), r3Null.Number);
+            Assert.Equal(default, r3Null.Number);
 
             Assert.NotNull(r4WithValue.Number);
             Assert.Equal(5, r4WithValue.Number!.Value.Value);
@@ -392,11 +392,11 @@ namespace Mapify.NET.Tests
 
             // Assert
             Assert.Equal(11, mappedWithValue.Item.Value);
-            Assert.Equal(default(ComplexValue), mappedWithNull.Item);
+            Assert.Equal(default, mappedWithNull.Item);
         }
 
-        public class C1 { public int Id { get; set; } public string Name { get; set; } }
-        public class D1 { public int Id { get; set; } public string Name { get; set; } }
+        public class C1 { public int Id { get; set; } public string Name { get; set; } = string.Empty; }
+        public class D1 { public int Id { get; set; } public string Name { get; set; } = string.Empty; }
 
         public class A1 { public int Prop { get; set; } }
         public class B1 { public int Prop { get; set; } }
