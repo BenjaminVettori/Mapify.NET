@@ -62,4 +62,10 @@ jobs:
           git push origin "v${{ steps.gitversion.outputs.semVer }}"
 
       - name: Publish NuGet
-        run: dotnet nuget push "Mapify/bin/Release/*.nupkg" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: |
+          $package = "Mapify/bin/Release/Mapify.NET.${{ steps.gitversion.outputs.semVer }}.nupkg"
+          if (-not (Test-Path $package)) {
+            throw "Expected package not found: $package"
+          }
+
+          dotnet nuget push $package --source https://api.nuget.org/v3/index.json --skip-duplicate
