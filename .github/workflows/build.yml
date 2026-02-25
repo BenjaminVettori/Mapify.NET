@@ -1,0 +1,61 @@
+name: build
+
+on:
+  workflow_run:
+    workflows: [ tests ]
+    branches: [ main ]
+    types:
+      - completed
+
+jobs:
+  build:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            8.0.x
+          dotnet-quality: preview
+
+      - name: Install .NET Framework 4.6.2 Developer Pack
+        run: choco install netfx-4.6.2-devpack -y
+
+      - name: GitVersion Setup
+        uses: gittools/actions/gitversion/setup@v0
+        with:
+          versionSpec: '5.x'
+
+      - name: GitVersion Execute
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v0
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Pack
+        run: dotnet pack Mapify/Mapify.NET.csproj -c Release -o ./artifacts /p:PackageVersion=${{ steps.gitversion.outputs.semVer }} /p:ContinuousIntegrationBuild=true
+
+      - name: Log package details
+        run: |
+          echo "GitVersion: ${{ steps.gitversion.outputs.semVer }}"
+          echo "Packages:"
+          dir artifacts
+
+      - name: Tag release
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag -a "v${{ steps.gitversion.outputs.semVer }}" -m "Release v${{ steps.gitversion.outputs.semVer }}"
+          git push origin "v${{ steps.gitversion.outputs.semVer }}"
+
+      # - name: Push NuGet
+      #   run: dotnet nuget push "artifacts/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
