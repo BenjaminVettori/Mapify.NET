@@ -1,5 +1,8 @@
 ﻿# Mapify.NET
 
+[![Tests](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/tests.yml)
+[![Build](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/build.yml)
+
 Mapify is a lightweight .NET library for creating static mapping expressions for C# objects. It bridges the gap between in-memory object mapping and LINQ projections (e.g., Entity Framework), allowing you to reuse the same mapping logic consistently across your application.
 
 ## Features ✨

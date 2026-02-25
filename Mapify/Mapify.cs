@@ -4,17 +4,17 @@ namespace Mapify.NET {
     public class Mapify : IMapify, IMapifyConfigurator {
         private bool _useDefaultMapIfTypeMapIsMissing;
 
-        private readonly IDictionary<MapKey, PendingMapRegistration> _pendingRegistrations = new Dictionary<MapKey, PendingMapRegistration>();
+        private readonly Dictionary<MapKey, PendingMapRegistration> _pendingRegistrations = [];
 
-        private readonly IDictionary<MapKey, MapBuildState> _buildStates = new Dictionary<MapKey, MapBuildState>();
+        private readonly Dictionary<MapKey, MapBuildState> _buildStates = [];
 
-        private readonly IDictionary<MapKey, LambdaExpression> _converters = new Dictionary<MapKey, LambdaExpression>();
+        private readonly Dictionary<MapKey, LambdaExpression> _converters = [];
 
-        private readonly IDictionary<Tuple<Type, Type>, LambdaExpression> _defaultMapCache = new Dictionary<Tuple<Type, Type>, LambdaExpression>();
+        private readonly Dictionary<Tuple<Type, Type>, LambdaExpression> _defaultMapCache = [];
 
-        private readonly IDictionary<MapKey, Delegate> _compiledMapToExistingCache = new Dictionary<MapKey, Delegate>();
+        private readonly Dictionary<MapKey, Delegate> _compiledMapToExistingCache = [];
 
-        private readonly IDictionary<MapKey, Delegate> _compiledMapToNewCache = new Dictionary<MapKey, Delegate>();
+        private readonly Dictionary<MapKey, Delegate> _compiledMapToNewCache = [];
 
         public Mapify(params IMapifyProfile[] profiles)
             : this((IEnumerable<IMapifyProfile>)profiles) {
@@ -110,7 +110,7 @@ namespace Mapify.NET {
         private LambdaExpression CreateMapFromPending(Type sourceType, Type targetType, string? mapName, LambdaExpression? partial) {
             var method = typeof(Mapify).GetMethod(nameof(CreateMapFromPendingGeneric), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
             var generic = method.MakeGenericMethod(sourceType, targetType);
-            return (LambdaExpression)generic.Invoke(this, new object?[] { mapName, partial })!;
+            return (LambdaExpression)generic.Invoke(this, [mapName, partial])!;
         }
 
         private Expression<Func<TSource, TTarget>> CreateMapFromPendingGeneric<TSource, TTarget>(string? mapName, LambdaExpression? partial)
@@ -161,7 +161,7 @@ namespace Mapify.NET {
 
             var method = typeof(Mapify).GetMethod(nameof(AddMapGeneric), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
             var generic = method.MakeGenericMethod(sourceType, targetType);
-            generic.Invoke(this, new object?[] { mappingExpression, name });
+            generic.Invoke(this, [mappingExpression, name]);
         }
 
         private void AddMapGeneric<TSource, TTarget>(LambdaExpression mappingExpression, string? name)
@@ -283,18 +283,12 @@ namespace Mapify.NET {
             return compiled.Invoke(source);
         }
 
-        private readonly struct MapKey : IEquatable<MapKey> {
-            public MapKey(Type sourceType, Type targetType, string? name) {
-                SourceType = sourceType;
-                TargetType = targetType;
-                Name = name;
-            }
+        private readonly struct MapKey(Type sourceType, Type targetType, string? name) : IEquatable<MapKey> {
+            public Type SourceType { get; } = sourceType;
 
-            public Type SourceType { get; }
+            public Type TargetType { get; } = targetType;
 
-            public Type TargetType { get; }
-
-            public string? Name { get; }
+            public string? Name { get; } = name;
 
             public bool Equals(MapKey other)
                 => SourceType == other.SourceType

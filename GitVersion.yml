@@ -1,0 +1,21 @@
+mode: ContinuousDelivery
+
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatch
+commit-message-incrementing: Enabled
+
+major-version-bump-message: '\+semver:\s?(major|breaking)'
+minor-version-bump-message: '\+semver:\s?(minor|feature)'
+patch-version-bump-message: '\+semver:\s?(patch|fix)'
+no-bump-message: '\+semver:\s?(none|skip)'
+
+branches:
+  main:
+    regex: ^main$
+    increment: Patch
+  feature:
+    regex: ^feature[/-]
+    increment: Inherit
+
+ignore:
+  sha: []
