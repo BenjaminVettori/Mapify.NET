@@ -203,9 +203,45 @@ mapper.Map(person, existing, "SomeNamedMap");
 
 ### 4. Use the instance mapper with Entity Framework (`IQueryable`)
 
-`IMapify.GetMap<TSource, TTarget>()` returns the expression for projections.
+`IMapify.GetMap<TSource, TTarget>()` returns the expression for projections, or `null` if missing (and default-map fallback is disabled).
+Use `IMapify.GetRequiredMap<TSource, TTarget>()` when missing maps should throw.
 
-You can also resolve a specific named map with `IMapify.GetMap<TSource, TTarget>("Name")`.
+The static `Mapper` API follows the same pattern:
+
+- `Mapper.GetMap<TSource, TTarget>()` may return `null`
+- `Mapper.GetRequiredMap<TSource, TTarget>()` throws when missing
+
+For convenience, you can also call `ProjectTo<TTarget>()` directly on an `IQueryable`.
+Use the overload with `IMapify` to resolve instance-based profile maps:
+
+```csharp
+var people = await _dbContext.Persons
+    .ProjectTo<PersonDto>(_mapify)
+    .OrderBy(x => x.Name)
+    .ToArrayAsync(cancellationToken);
+```
+
+Named map projections are supported as well:
+
+```csharp
+var people = await _dbContext.Persons
+    .ProjectTo<PersonDto>(_mapify, "Masked")
+    .ToArrayAsync(cancellationToken);
+```
+
+If you use the static `Mapper` API (`Mapper.AddMap(...)`), you can call:
+
+```csharp
+var people = _dbContext.Persons
+    .ProjectTo<PersonDto>()
+    .OrderBy(x => x.Name)
+    .ToArray();
+```
+
+For named maps, both APIs follow the same rule:
+
+- `GetMap<TSource, TTarget>("Name")` may return `null` when the named map is missing
+- `GetRequiredMap<TSource, TTarget>("Name")` throws when the named map is missing
 
 `UseMap` works with expressions too (not only direct properties). For example, you can filter children before mapping:
 
@@ -277,6 +313,23 @@ For EF/EF Core projections, if you apply ordering or other sequence operators af
 Addresses = UseMap<IEnumerable<Address>, IEnumerable<AddressDto>>(x.Addresses)
     .OrderBy(dto => dto.StreetName)
     .ToList()
+```
+
+Inside `CreateMap` expressions you can also use `ProjectTo<TTarget>()` on enumerable members.
+Mapify rewrites this marker to the same internal behavior as `UseMap`.
+
+```csharp
+CreateMap<Person, PersonDto>(x => new PersonDto {
+    Addresses = x.Addresses.ProjectTo<AddressDto>().ToArray()
+});
+```
+
+The marker also supports named mappings:
+
+```csharp
+CreateMap<Person, PersonDto>("Masked", x => new PersonDto {
+    Addresses = x.Addresses.ProjectTo<AddressDto>("Postal").ToArray()
+});
 ```
 
 ## Detailed Functionality 📚

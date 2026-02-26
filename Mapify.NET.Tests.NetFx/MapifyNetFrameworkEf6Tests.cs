@@ -126,6 +126,48 @@ public class MapifyNetFrameworkEf6Tests {
     }
 
     [Fact]
+    public void InstanceMapify_UseMap_ShouldThrowForArrayProjection_InEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-100" },
+                    new Ef6Phone { Number = "+44-101" }
+                }
+            });
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new Ef6Address { City = "Manchester" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-200" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify([
+                new Ef6PhoneProfile(),
+                new Ef6PersonArrayCollectionsProfile()
+            ]);
+
+            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonArrayCollectionsDto>();
+
+            // EF6 cannot translate array materialization in projection pipelines.
+            Assert.Throws<NotSupportedException>(() => db.People
+                .OrderBy(x => x.Id)
+                .Select(mapExpr)
+                .ToList());
+        }
+    }
+
+    [Fact]
     public void CreateMap_ShouldImplicitlyMapPrimitiveEnumerableCollections_InEf6Projection() {
         using (var connection = Effort.DbConnectionFactory.CreateTransient())
         using (var db = new Ef6MapifyContext(connection)) {
@@ -168,6 +210,47 @@ public class MapifyNetFrameworkEf6Tests {
             Assert.Equal(new[] { "+44-100", "+44-101" }, result[0].Texts);
             Assert.Equal(new[] { 3 }, result[1].Numbers);
             Assert.Equal(new[] { "+44-200" }, result[1].Texts);
+        }
+    }
+
+    [Fact]
+    public void CreateMap_ShouldThrowForPrimitiveArrayProjection_InEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-100" },
+                    new Ef6Phone { Number = "+44-101" }
+                }
+            });
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new Ef6Address { City = "Manchester" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-200" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var map = Mapper.CreateMap<Ef6PrimitiveArrayCollectionsSource, Ef6PrimitiveArrayCollectionsDto>();
+
+            // EF6 cannot translate source-side ToArray() inside LINQ-to-Entities projections.
+            Assert.Throws<NotSupportedException>(() => db.People
+                .OrderBy(x => x.Id)
+                .Select(x => new Ef6PrimitiveArrayCollectionsSource {
+                    Numbers = x.Phones.OrderBy(p => p.Id).Select(p => p.Id).ToArray(),
+                    Texts = x.Phones.OrderBy(p => p.Id).Select(p => p.Number).ToList()
+                })
+                .Select(map)
+                .ToList());
         }
     }
 
@@ -219,6 +302,49 @@ public class MapifyNetFrameworkEf6Tests {
             Assert.Equal("Alan Turing", result[1].FullName);
             Assert.Equal("Manchester", result[1].HomeAddress.City);
             Assert.Equal(["+44-200"], result[1].Phones.Select(x => x.Number).ToArray());
+        }
+    }
+
+    [Fact]
+    public void InstanceMapify_ShouldThrowForImplicitNestedArrayProjection_InEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-100" },
+                    new Ef6Phone { Number = "+44-101" }
+                }
+            });
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new Ef6Address { City = "Manchester" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-200" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify([
+                new Ef6AddressProfile(),
+                new Ef6PhoneProfile(),
+                new Ef6PersonImplicitNestedAndArrayProfile()
+            ]);
+
+            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonImplicitNestedAndArrayDto>();
+
+            // EF6 cannot translate implicit nested mapping when target member is an array.
+            Assert.Throws<NotSupportedException>(() => db.People
+                .OrderBy(x => x.Id)
+                .Select(mapExpr)
+                .ToList());
         }
     }
 
@@ -407,6 +533,118 @@ public class MapifyNetFrameworkEf6Tests {
         }
     }
 
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldWorkInEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-100" },
+                    new Ef6Phone { Number = "+44-101" }
+                }
+            });
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new Ef6Address { City = "Manchester" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-200" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify([
+                new Ef6PhoneProfile(),
+                new Ef6PersonCollectionsProfile()
+            ]);
+
+            var result = db.People
+                .OrderBy(x => x.Id)
+                .ProjectTo<Ef6PersonCollectionsDto>(mapify)
+                .ToList();
+
+            Assert.Equal(2, result.Count);
+            Assert.Equal("Ada Lovelace", result[0].FullName);
+            Assert.Equal(["+44-100", "+44-101"], result[0].PhonesList.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100", "+44-101"], result[0].PhonesEnumerable.Select(x => x.Number).ToArray());
+
+            Assert.Equal("Alan Turing", result[1].FullName);
+            Assert.Equal(["+44-200"], result[1].PhonesList.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-200"], result[1].PhonesEnumerable.Select(x => x.Number).ToArray());
+        }
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectToNamed_ShouldWorkInEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-100" },
+                    new Ef6Phone { Number = "+44-101" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify([
+                new Ef6NamedPhoneProfile(),
+                new Ef6NamedProjectToPersonProfile()
+            ]);
+
+            var result = db.People
+                .ProjectTo<Ef6ProjectToNamedPhonesDto>(mapify, "Masked")
+                .Single();
+
+            Assert.Equal(["+44-100 [MASKED]", "+44-101 [MASKED]"], result.Phones.Select(x => x.Number).ToArray());
+        }
+    }
+
+    [Fact]
+    public void InstanceMapify_NestedNamedProjectToMarker_ShouldWorkInEf6Projection() {
+        using (var connection = Effort.DbConnectionFactory.CreateTransient())
+        using (var db = new Ef6MapifyContext(connection)) {
+            db.Database.CreateIfNotExists();
+
+            db.People.Add(new Ef6Person {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new Ef6Address { City = "London" },
+                Phones = new List<Ef6Phone> {
+                    new Ef6Phone { Number = "+44-300" },
+                    new Ef6Phone { Number = "+44-100" }
+                }
+            });
+
+            db.SaveChanges();
+
+            var mapify = new Mapify([
+                new Ef6NamedPhoneProfile(),
+                new Ef6NamedNestedProjectToPersonProfile()
+            ]);
+
+            var mapExpr = mapify.GetMap<Ef6Person, Ef6ProjectToNamedPhonesDto>("MaskedNested");
+
+            var result = db.People
+                .Select(mapExpr)
+                .Single();
+
+            Assert.Equal(["+44-100 [MASKED]", "+44-300 [MASKED]"], result.Phones.Select(x => x.Number).ToArray());
+        }
+    }
+
     public class Ef6MapifyContext : DbContext {
         public Ef6MapifyContext(DbConnection connection)
             : base(connection, true) {
@@ -459,8 +697,19 @@ public class MapifyNetFrameworkEf6Tests {
         public IEnumerable<Ef6PhoneDto> PhonesEnumerable { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
     }
 
+    public class Ef6PersonArrayCollectionsDto {
+        public string FullName { get; set; } = string.Empty;
+        public Ef6PhoneDto[] PhonesArray { get; set; } = [];
+        public List<Ef6PhoneDto> PhonesList { get; set; } = new List<Ef6PhoneDto>();
+    }
+
     public class Ef6PrimitiveCollectionsSource {
         public ICollection<int> Numbers { get; set; } = new List<int>();
+        public ICollection<string> Texts { get; set; } = new List<string>();
+    }
+
+    public class Ef6PrimitiveArrayCollectionsSource {
+        public int[] Numbers { get; set; } = [];
         public ICollection<string> Texts { get; set; } = new List<string>();
     }
 
@@ -469,10 +718,21 @@ public class MapifyNetFrameworkEf6Tests {
         public IEnumerable<string> Texts { get; set; } = Enumerable.Empty<string>();
     }
 
+    public class Ef6PrimitiveArrayCollectionsDto {
+        public List<int> Numbers { get; set; } = new List<int>();
+        public string[] Texts { get; set; } = [];
+    }
+
     public class Ef6PersonImplicitNestedAndCollectionsDto {
         public string FullName { get; set; } = string.Empty;
         public Ef6AddressDto HomeAddress { get; set; } = null!;
         public List<Ef6PhoneDto> Phones { get; set; } = new List<Ef6PhoneDto>();
+    }
+
+    public class Ef6PersonImplicitNestedAndArrayDto {
+        public string FullName { get; set; } = string.Empty;
+        public Ef6AddressDto HomeAddress { get; set; } = null!;
+        public Ef6PhoneDto[] Phones { get; set; } = [];
     }
 
     public class Ef6PersonFilteredPhonesDto {
@@ -497,6 +757,10 @@ public class MapifyNetFrameworkEf6Tests {
         public int AgeInDays { get; set; }
     }
 
+    public class Ef6ProjectToNamedPhonesDto {
+        public IEnumerable<Ef6PhoneDto> Phones { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+    }
+
     private class Ef6PhoneProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<Ef6Phone, Ef6PhoneDto>();
@@ -519,9 +783,27 @@ public class MapifyNetFrameworkEf6Tests {
         }
     }
 
+    private class Ef6PersonArrayCollectionsProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6PersonArrayCollectionsDto>(x => new Ef6PersonArrayCollectionsDto {
+                FullName = x.FirstName + " " + x.LastName,
+                PhonesArray = UseMap<ICollection<Ef6Phone>, Ef6PhoneDto[]>(x.Phones),
+                PhonesList = UseMap<ICollection<Ef6Phone>, List<Ef6PhoneDto>>(x.Phones)
+            });
+        }
+    }
+
     private class Ef6PersonImplicitNestedAndCollectionsProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<Ef6Person, Ef6PersonImplicitNestedAndCollectionsDto>(x => new Ef6PersonImplicitNestedAndCollectionsDto {
+                FullName = x.FirstName + " " + x.LastName
+            });
+        }
+    }
+
+    private class Ef6PersonImplicitNestedAndArrayProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6PersonImplicitNestedAndArrayDto>(x => new Ef6PersonImplicitNestedAndArrayDto {
                 FullName = x.FirstName + " " + x.LastName
             });
         }
@@ -586,6 +868,28 @@ public class MapifyNetFrameworkEf6Tests {
         protected override void Configure() {
             CreateMap<Ef6Person, Ef6PersonCalculationDto>(x => new Ef6PersonCalculationDto {
                 AgeInDays = 365 * UseMap<int, int>(x.Id)
+            });
+        }
+    }
+
+    private class Ef6NamedProjectToPersonProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6ProjectToNamedPhonesDto>("Raw", x => new Ef6ProjectToNamedPhonesDto {
+                Phones = x.Phones.ProjectTo<Ef6PhoneDto>("Raw").ToList()
+            });
+
+            CreateMap<Ef6Person, Ef6ProjectToNamedPhonesDto>("Masked", x => new Ef6ProjectToNamedPhonesDto {
+                Phones = x.Phones.ProjectTo<Ef6PhoneDto>("Masked").ToList()
+            });
+        }
+    }
+
+    private class Ef6NamedNestedProjectToPersonProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6ProjectToNamedPhonesDto>("MaskedNested", x => new Ef6ProjectToNamedPhonesDto {
+                Phones = x.Phones.ProjectTo<Ef6PhoneDto>("Masked")
+                    .OrderBy(dto => dto.Number)
+                    .ToList()
             });
         }
     }

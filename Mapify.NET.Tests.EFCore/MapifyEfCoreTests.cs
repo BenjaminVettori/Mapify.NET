@@ -405,6 +405,122 @@ public class MapifyEfCoreTests {
         Assert.All(result, x => Assert.Equal(x.Id * 365, x.AgeInDays));
     }
 
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldWorkInEfCoreProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.People.AddRange(
+            new EfCorePerson {
+                FirstName = "Grace",
+                LastName = "Hopper",
+                HomeAddress = new EfCoreAddress { City = "New York" },
+                Phones = new List<EfCorePhone> {
+                    new EfCorePhone { Number = "+1-300" },
+                    new EfCorePhone { Number = "+1-301" }
+                }
+            },
+            new EfCorePerson {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new EfCoreAddress { City = "London" },
+                Phones = new List<EfCorePhone> {
+                    new EfCorePhone { Number = "+44-200" }
+                }
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCorePhoneProfile(),
+            new EfCorePersonCollectionsProfile()
+        ]);
+
+        var result = db.People
+            .OrderBy(x => x.Id)
+            .ProjectTo<EfCorePersonCollectionsDto>(mapify)
+            .ToList();
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Grace Hopper", result[0].FullName);
+        Assert.Equal(new[] { "+1-300", "+1-301" }, result[0].PhonesArray.Select(x => x.Number).ToArray());
+        Assert.Equal(new[] { "+1-300", "+1-301" }, result[0].PhonesList.Select(x => x.Number).ToArray());
+
+        Assert.Equal("Alan Turing", result[1].FullName);
+        Assert.Equal(new[] { "+44-200" }, result[1].PhonesArray.Select(x => x.Number).ToArray());
+        Assert.Equal(new[] { "+44-200" }, result[1].PhonesList.Select(x => x.Number).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectToNamed_ShouldWorkInEfCoreProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.People.Add(new EfCorePerson {
+            FirstName = "Ada",
+            LastName = "Lovelace",
+            HomeAddress = new EfCoreAddress { City = "London" },
+            Phones = new List<EfCorePhone> {
+                new EfCorePhone { Number = "+44-100" },
+                new EfCorePhone { Number = "+44-101" }
+            }
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedPhoneProfile(),
+            new EfCoreNamedProjectToPersonProfile()
+        ]);
+
+        var result = db.People
+            .ProjectTo<EfCoreProjectToNamedPhonesDto>(mapify, "Masked")
+            .Single();
+
+        Assert.Equal(new[] { "+44-100 [MASKED]", "+44-101 [MASKED]" }, result.Phones.Select(x => x.Number).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_NestedNamedProjectToMarker_ShouldWorkInEfCoreProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.People.Add(new EfCorePerson {
+            FirstName = "Ada",
+            LastName = "Lovelace",
+            HomeAddress = new EfCoreAddress { City = "London" },
+            Phones = new List<EfCorePhone> {
+                new EfCorePhone { Number = "+44-300" },
+                new EfCorePhone { Number = "+44-100" }
+            }
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedPhoneProfile(),
+            new EfCoreNamedNestedProjectToPersonProfile()
+        ]);
+
+        var mapExpr = mapify.GetMap<EfCorePerson, EfCoreProjectToNamedPhonesDto>("Masked");
+
+        var result = db.People
+            .Select(mapExpr)
+            .Single();
+
+        Assert.Equal(new[] { "+44-100 [MASKED]", "+44-300 [MASKED]" }, result.Phones.Select(x => x.Number).ToArray());
+    }
+
     private sealed class EfCoreMapifyContext(DbContextOptions<EfCoreMapifyContext> options) : DbContext(options) {
         public DbSet<EfCorePerson> People => Set<EfCorePerson>();
         public DbSet<EfCoreAddress> Addresses => Set<EfCoreAddress>();
@@ -484,6 +600,10 @@ public class MapifyEfCoreTests {
     private sealed class EfCorePersonCalculationDto {
         public int Id { get; set; }
         public int AgeInDays { get; set; }
+    }
+
+    private sealed class EfCoreProjectToNamedPhonesDto {
+        public IEnumerable<EfCorePhoneDto> Phones { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
     }
 
     private sealed class EfCorePhoneProfile : MapifyProfile {
@@ -575,6 +695,28 @@ public class MapifyEfCoreTests {
         protected override void Configure() {
             CreateMap<EfCorePerson, EfCorePersonCalculationDto>(x => new EfCorePersonCalculationDto {
                 AgeInDays = 365 * UseMap<int, int>(x.Id)
+            });
+        }
+    }
+
+    private sealed class EfCoreNamedProjectToPersonProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCoreProjectToNamedPhonesDto>("Raw", x => new EfCoreProjectToNamedPhonesDto {
+                Phones = x.Phones.ProjectTo<EfCorePhoneDto>("Raw").ToList()
+            });
+
+            CreateMap<EfCorePerson, EfCoreProjectToNamedPhonesDto>("Masked", x => new EfCoreProjectToNamedPhonesDto {
+                Phones = x.Phones.ProjectTo<EfCorePhoneDto>("Masked").ToList()
+            });
+        }
+    }
+
+    private sealed class EfCoreNamedNestedProjectToPersonProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCoreProjectToNamedPhonesDto>("Masked", x => new EfCoreProjectToNamedPhonesDto {
+                Phones = x.Phones.ProjectTo<EfCorePhoneDto>("Masked")
+                    .OrderBy(dto => dto.Number)
+                    .ToList()
             });
         }
     }

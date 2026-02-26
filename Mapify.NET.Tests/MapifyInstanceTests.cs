@@ -287,6 +287,46 @@ namespace Mapify.NET.Tests {
             public decimal MaxTemperatureCelsius { get; set; }
         }
 
+        private class ProjectToQuerySource {
+            public int Value { get; set; }
+        }
+
+        private class ProjectToQueryTarget {
+            public int Value { get; set; }
+        }
+
+        private class ProjectToAddressSource {
+            public string StreetName { get; set; } = string.Empty;
+        }
+
+        private class ProjectToAddressTarget {
+            public string StreetName { get; set; } = string.Empty;
+        }
+
+        private class ProjectToPersonSource {
+            public IEnumerable<ProjectToAddressSource> Addresses { get; set; } = Enumerable.Empty<ProjectToAddressSource>();
+        }
+
+        private class ProjectToPersonTarget {
+            public ProjectToAddressTarget[] Addresses { get; set; } = Array.Empty<ProjectToAddressTarget>();
+        }
+
+        private class ProjectToNamedPhoneSource {
+            public string Number { get; set; } = string.Empty;
+        }
+
+        private class ProjectToNamedPhoneTarget {
+            public string Number { get; set; } = string.Empty;
+        }
+
+        private class ProjectToNamedPersonSource {
+            public IEnumerable<ProjectToNamedPhoneSource> Phones { get; set; } = Enumerable.Empty<ProjectToNamedPhoneSource>();
+        }
+
+        private class ProjectToNamedPersonTarget {
+            public ProjectToNamedPhoneTarget[] Phones { get; set; } = Array.Empty<ProjectToNamedPhoneTarget>();
+        }
+
         private enum FaultProfileMode {
             None,
             WhitespaceName,
@@ -660,6 +700,54 @@ namespace Mapify.NET.Tests {
                             .OrderBy(m => m.Fahrenheit)
                             .Max(m => m.Fahrenheit)
                         - 32m) * 5m / 9m
+                });
+            }
+        }
+
+        private class ProjectToQueryProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ProjectToQuerySource, ProjectToQueryTarget>(x => new ProjectToQueryTarget {
+                    Value = x.Value + 1
+                });
+            }
+        }
+
+        private class ProjectToAddressProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ProjectToAddressSource, ProjectToAddressTarget>(x => new ProjectToAddressTarget {
+                    StreetName = x.StreetName + "-mapped"
+                });
+            }
+        }
+
+        private class ProjectToPersonProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ProjectToPersonSource, ProjectToPersonTarget>(x => new ProjectToPersonTarget {
+                    Addresses = x.Addresses.ProjectTo<ProjectToAddressTarget>().ToArray()
+                });
+            }
+        }
+
+        private class ProjectToNamedPhoneProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ProjectToNamedPhoneSource, ProjectToNamedPhoneTarget>("Raw", x => new ProjectToNamedPhoneTarget {
+                    Number = x.Number
+                });
+
+                CreateMap<ProjectToNamedPhoneSource, ProjectToNamedPhoneTarget>("Masked", x => new ProjectToNamedPhoneTarget {
+                    Number = x.Number + " [MASKED]"
+                });
+            }
+        }
+
+        private class ProjectToNamedPersonProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<ProjectToNamedPersonSource, ProjectToNamedPersonTarget>("Raw", x => new ProjectToNamedPersonTarget {
+                    Phones = x.Phones.ProjectTo<ProjectToNamedPhoneTarget>("Raw").ToArray()
+                });
+
+                CreateMap<ProjectToNamedPersonSource, ProjectToNamedPersonTarget>("Masked", x => new ProjectToNamedPersonTarget {
+                    Phones = x.Phones.ProjectTo<ProjectToNamedPhoneTarget>("Masked").ToArray()
                 });
             }
         }
@@ -1138,9 +1226,44 @@ namespace Mapify.NET.Tests {
             var person = new NamedPerson { FirstName = "Grace", LastName = "Hopper" };
 
             var fullNameMap = mapify.GetMap<NamedPerson, string>("FullName");
+            Assert.NotNull(fullNameMap);
             var mapped = fullNameMap.Compile().Invoke(person);
 
             Assert.Equal("Grace Hopper", mapped);
+        }
+
+        [Fact]
+        public void GetMap_Default_ShouldReturnNull_WhenMapMissingAndDefaultDisabled() {
+            var mapify = new Mapify();
+            mapify.UseDefaultMapIfTypeMapIsMissing(false);
+
+            var map = mapify.GetMap<SourceA, TargetA>();
+
+            Assert.Null(map);
+        }
+
+        [Fact]
+        public void GetRequiredMap_Default_ShouldThrow_WhenMapMissingAndDefaultDisabled() {
+            var mapify = new Mapify();
+            mapify.UseDefaultMapIfTypeMapIsMissing(false);
+
+            Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<SourceA, TargetA>());
+        }
+
+        [Fact]
+        public void GetMap_Named_ShouldReturnNull_WhenNamedMappingIsMissing() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+
+            var map = mapify.GetMap<NamedPerson, string>("UnknownName");
+
+            Assert.Null(map);
+        }
+
+        [Fact]
+        public void GetRequiredMap_Named_ShouldThrow_WhenNamedMappingIsMissing() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+
+            Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<NamedPerson, string>("UnknownName"));
         }
 
         [Fact]
@@ -1170,6 +1293,13 @@ namespace Mapify.NET.Tests {
             var mapify = new Mapify(new NamedPersonValueMapsProfile());
 
             Assert.Throws<ArgumentException>(() => mapify.GetMap<NamedPerson, string>(" "));
+        }
+
+        [Fact]
+        public void GetRequiredMap_Named_ShouldThrow_WhenNameIsWhitespace() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+
+            Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<NamedPerson, string>(" "));
         }
 
         [Fact]
@@ -1272,6 +1402,72 @@ namespace Mapify.NET.Tests {
             var mapped = mapify.Map<TemperatureSeriesSource, TemperatureSeriesTarget>(source);
 
             Assert.Equal(20m, mapped.MaxTemperatureCelsius);
+        }
+
+        [Fact]
+        public void ProjectTo_IQueryable_ShouldUseInstanceMapper_AndAllowFurtherQueryComposition() {
+            var mapify = new Mapify(new ProjectToQueryProfile());
+
+            var projectedValues = new[] {
+                    new ProjectToQuerySource { Value = 1 },
+                    new ProjectToQuerySource { Value = 2 },
+                    new ProjectToQuerySource { Value = 3 }
+                }
+                .AsQueryable()
+                .ProjectTo<ProjectToQueryTarget>(mapify)
+                .Where(x => x.Value > 2)
+                .Select(x => x.Value)
+                .ToArray();
+
+            Assert.Equal([3, 4], projectedValues);
+        }
+
+        [Fact]
+        public void CreateMap_ShouldTranslateNestedProjectToMarker_ToUseExistingMap() {
+            var mapify = new Mapify(new ProjectToPersonProfile(), new ProjectToAddressProfile());
+
+            var mapped = mapify.Map<ProjectToPersonSource, ProjectToPersonTarget>(new ProjectToPersonSource {
+                Addresses = [
+                    new ProjectToAddressSource { StreetName = "A" },
+                    new ProjectToAddressSource { StreetName = "B" }
+                ]
+            });
+
+            Assert.Equal(["A-mapped", "B-mapped"], mapped.Addresses.Select(x => x.StreetName).ToArray());
+        }
+
+        [Fact]
+        public void ProjectTo_IQueryable_Named_ShouldUseInstanceMapperNamedMap() {
+            var mapify = new Mapify(new ProjectToNamedPhoneProfile(), new ProjectToNamedPersonProfile());
+
+            var projected = new[] {
+                    new ProjectToNamedPersonSource {
+                        Phones = [
+                            new ProjectToNamedPhoneSource { Number = "+1-100" }
+                        ]
+                    }
+                }
+                .AsQueryable()
+                .ProjectTo<ProjectToNamedPersonTarget>(mapify, "Masked")
+                .Single();
+
+            Assert.Equal(["+1-100 [MASKED]"], projected.Phones.Select(x => x.Number).ToArray());
+        }
+
+        [Fact]
+        public void CreateMap_ShouldTranslateNestedNamedProjectToMarker_ToNamedUseMap() {
+            var mapify = new Mapify(new ProjectToNamedPersonProfile(), new ProjectToNamedPhoneProfile());
+
+            var mapped = mapify.Map<ProjectToNamedPersonSource, ProjectToNamedPersonTarget>(
+                new ProjectToNamedPersonSource {
+                    Phones = [
+                        new ProjectToNamedPhoneSource { Number = "+1-200" }
+                    ]
+                },
+                "Masked"
+            );
+
+            Assert.Equal(["+1-200 [MASKED]"], mapped.Phones.Select(x => x.Number).ToArray());
         }
     }
 }

@@ -6,6 +6,8 @@ namespace Mapify.NET {
 
         private const string UseMapMarkerName = "UseMap";
 
+        private const string ProjectToMarkerName = "ProjectTo";
+
         private static bool GlobalUseDefaultMapIfTypeMapIsMissing = false;
 
         /// <summary>
@@ -94,6 +96,14 @@ namespace Mapify.NET {
             }
         }
 
+        /// <summary>
+        /// Gets the registered map expression for the source and target types.
+        /// Returns <c>null</c> when no map exists and default-map fallback is disabled.
+        /// </summary>
+        /// <typeparam name="TSource">The source type.</typeparam>
+        /// <typeparam name="TTarget">The target type.</typeparam>
+        /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
+        /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
         public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
             var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (Converters.TryGetValue(key, out var existingConverter)) {
@@ -109,6 +119,14 @@ namespace Mapify.NET {
             return null;
         }
 
+        /// <summary>
+        /// Gets the registered map expression for the source and target types, throwing if none is available.
+        /// </summary>
+        /// <typeparam name="TSource">The source type.</typeparam>
+        /// <typeparam name="TTarget">The target type.</typeparam>
+        /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
+        /// <returns>The required mapping expression.</returns>
+        /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
         public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
             var map = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
             if (map != null) {
@@ -244,6 +262,13 @@ namespace Mapify.NET {
             return action;
         }
 
+        /// <summary>
+        /// Creates a mapping expression for the source and destination types.
+        /// </summary>
+        /// <typeparam name="TSource">The source type.</typeparam>
+        /// <typeparam name="TDestination">The destination type.</typeparam>
+        /// <param name="partial">Optional partial initializer that overrides selected destination bindings.</param>
+        /// <returns>A full mapping expression that can be compiled or registered.</returns>
         public static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
             Expression<Func<TSource, TDestination>>? partial = null
         ) {
@@ -353,8 +378,59 @@ namespace Mapify.NET {
                     return replacement;
                 }
 
+                if (IsProjectToMarker(node.Method)) {
+                    if (!TryResolveProjectToCall(node, existingMapResolver, out var replacement)) {
+                        throw new InvalidOperationException($"No mapping found for nested {ProjectToMarkerName} call from '{node.Arguments[0].Type.FullName}' to '{node.Type.FullName}'.");
+                    }
+
+                    return replacement;
+                }
+
                 return base.VisitMethodCall(node);
             }
+        }
+
+        private static bool TryResolveProjectToCall(
+            MethodCallExpression methodCall,
+            Func<Type, Type, string?, LambdaExpression?> existingMapResolver,
+            out Expression resolvedExpression
+        ) {
+            resolvedExpression = null!;
+
+            string? markerMapName = null;
+            Expression sourceAccess;
+
+            if (methodCall.Arguments.Count == 1) {
+                sourceAccess = methodCall.Arguments[0];
+            } else if (methodCall.Arguments.Count == 2) {
+                if (methodCall.Arguments[1].Type == typeof(bool)) {
+                    sourceAccess = methodCall.Arguments[0];
+                } else {
+                    if (methodCall.Arguments[1] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
+                        throw new InvalidOperationException($"{ProjectToMarkerName} name argument must be a non-empty constant string.");
+                    }
+
+                    markerMapName = mapName;
+                    sourceAccess = methodCall.Arguments[0];
+                }
+            } else {
+                return false;
+            }
+
+            if (!TryBuildMappedExpression(sourceAccess, sourceAccess.Type, methodCall.Type, existingMapResolver, markerMapName, out var mappedBody, out var sourceNullCheck)) {
+                return false;
+            }
+
+            if (sourceNullCheck != null) {
+                mappedBody = Expression.Condition(
+                    sourceNullCheck,
+                    mappedBody,
+                    CreateDefaultValueExpression(methodCall.Type)
+                );
+            }
+
+            resolvedExpression = mappedBody;
+            return true;
         }
 
         private static bool TryResolveUseMapCall(
@@ -494,6 +570,37 @@ namespace Mapify.NET {
 
             var parameterCount = genericDefinition.GetParameters().Length;
             return parameterCount == 1 || parameterCount == 2;
+        }
+
+        private static bool IsProjectToMarker(MethodInfo method) {
+            if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProjectToExtensions)) {
+                return false;
+            }
+
+            var genericDefinition = method.GetGenericMethodDefinition();
+            if (!string.Equals(genericDefinition.Name, ProjectToMarkerName, StringComparison.Ordinal)) {
+                return false;
+            }
+
+            if (genericDefinition.GetGenericArguments().Length != 1) {
+                return false;
+            }
+
+            var parameters = genericDefinition.GetParameters();
+            if (parameters.Length < 1 || parameters.Length > 2) {
+                return false;
+            }
+
+            if (!typeof(System.Collections.IEnumerable).IsAssignableFrom(parameters[0].ParameterType)
+                && !typeof(IQueryable).IsAssignableFrom(parameters[0].ParameterType)) {
+                return false;
+            }
+
+            if (parameters.Length == 2 && parameters[1].ParameterType != typeof(string)) {
+                return parameters[1].ParameterType == typeof(bool);
+            }
+
+            return true;
         }
 
         /// <summary>

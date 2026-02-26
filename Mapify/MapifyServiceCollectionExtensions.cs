@@ -1,7 +1,18 @@
 using System.Reflection;
 
 namespace Microsoft.Extensions.DependencyInjection {
+    /// <summary>
+    /// Dependency injection registration helpers for Mapify profiles and mapper instances.
+    /// </summary>
     public static class MapifyServiceCollectionExtensions {
+        /// <summary>
+        /// Registers the default <see cref="Mapify.NET.IMapify"/> mapper using already-registered profile types.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="lifecycle">The mapper lifetime.</param>
+        /// <returns>The same service collection for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="lifecycle"/> is not a valid <see cref="ServiceLifetime"/> value.</exception>
         public static IServiceCollection AddMapify(this IServiceCollection services, ServiceLifetime lifecycle = ServiceLifetime.Singleton) {
             if (services == null) {
                 throw new ArgumentNullException(nameof(services));
@@ -31,6 +42,14 @@ namespace Microsoft.Extensions.DependencyInjection {
             return services;
         }
 
+        /// <summary>
+        /// Registers profiles from the provided assemblies and then registers the default <see cref="Mapify.NET.IMapify"/> mapper.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="lifecycle">The mapper lifetime.</param>
+        /// <param name="profileAssemblies">Assemblies to scan for <see cref="Mapify.NET.MapifyProfile"/> implementations.</param>
+        /// <returns>The same service collection for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
         public static IServiceCollection AddMapify(this IServiceCollection services, ServiceLifetime lifecycle, params Assembly[] profileAssemblies) {
             if (services == null) {
                 throw new ArgumentNullException(nameof(services));
@@ -41,15 +60,36 @@ namespace Microsoft.Extensions.DependencyInjection {
             return services;
         }
 
+        /// <summary>
+        /// Registers profiles from the provided assemblies and then registers the default mapper with singleton lifetime.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="profileAssemblies">Assemblies to scan for <see cref="Mapify.NET.MapifyProfile"/> implementations.</param>
+        /// <returns>The same service collection for chaining.</returns>
         public static IServiceCollection AddMapify(this IServiceCollection services, params Assembly[] profileAssemblies) {
             return services.AddMapify(ServiceLifetime.Singleton, profileAssemblies);
         }
 
+        /// <summary>
+        /// Registers a specific profile type for the default mapper.
+        /// </summary>
+        /// <typeparam name="TProfile">The profile type to register.</typeparam>
+        /// <param name="services">The service collection.</param>
+        /// <returns>The same service collection for chaining.</returns>
         public static IServiceCollection AddMapifyProfile<TProfile>(this IServiceCollection services)
             where TProfile : Mapify.NET.MapifyProfile {
             return services.AddMapifyProfile<TProfile>(null);
         }
 
+        /// <summary>
+        /// Registers a specific profile type for a named mapper context (or default when name is null).
+        /// </summary>
+        /// <typeparam name="TProfile">The profile type to register.</typeparam>
+        /// <param name="services">The service collection.</param>
+        /// <param name="mapperName">The optional mapper name. Use null for the default mapper.</param>
+        /// <returns>The same service collection for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="mapperName"/> is whitespace.</exception>
         public static IServiceCollection AddMapifyProfile<TProfile>(this IServiceCollection services, string? mapperName)
             where TProfile : Mapify.NET.MapifyProfile {
             if (services == null) {
@@ -64,6 +104,16 @@ namespace Microsoft.Extensions.DependencyInjection {
             return services;
         }
 
+        /// <summary>
+        /// Registers a named mapper entry that can later be resolved via <see cref="GetMapify(IServiceProvider, string)"/>.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="name">The mapper name.</param>
+        /// <param name="lifecycle">The mapper lifetime.</param>
+        /// <returns>The same service collection for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="lifecycle"/> is not a valid <see cref="ServiceLifetime"/> value.</exception>
         public static IServiceCollection AddMapifyNamed(this IServiceCollection services, string name, ServiceLifetime lifecycle = ServiceLifetime.Singleton) {
             if (services == null) {
                 throw new ArgumentNullException(nameof(services));
@@ -102,6 +152,15 @@ namespace Microsoft.Extensions.DependencyInjection {
             return services;
         }
 
+        /// <summary>
+        /// Registers profiles from the provided assemblies and then registers a named mapper.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="name">The mapper name.</param>
+        /// <param name="lifecycle">The mapper lifetime.</param>
+        /// <param name="profileAssemblies">Assemblies to scan for <see cref="Mapify.NET.MapifyProfile"/> implementations.</param>
+        /// <returns>The same service collection for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
         public static IServiceCollection AddMapifyNamed(this IServiceCollection services, string name, ServiceLifetime lifecycle, params Assembly[] profileAssemblies) {
             if (services == null) {
                 throw new ArgumentNullException(nameof(services));
@@ -112,10 +171,25 @@ namespace Microsoft.Extensions.DependencyInjection {
             return services;
         }
 
+        /// <summary>
+        /// Scans assemblies for profile types and registers them for the default mapper.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="profileAssemblies">Assemblies to scan for <see cref="Mapify.NET.MapifyProfile"/> implementations.</param>
+        /// <returns>The same service collection for chaining.</returns>
         public static IServiceCollection AddMapifyProfiles(this IServiceCollection services, params Assembly[] profileAssemblies) {
             return services.AddMapifyProfiles(null, profileAssemblies);
         }
 
+        /// <summary>
+        /// Scans assemblies for profile types and registers them for a named mapper context (or default when name is null).
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="mapperName">The optional mapper name. Use null for the default mapper.</param>
+        /// <param name="profileAssemblies">Assemblies to scan for <see cref="Mapify.NET.MapifyProfile"/> implementations.</param>
+        /// <returns>The same service collection for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> or <paramref name="profileAssemblies"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="mapperName"/> is whitespace.</exception>
         public static IServiceCollection AddMapifyProfiles(this IServiceCollection services, string? mapperName, params Assembly[] profileAssemblies) {
             if (services == null) {
                 throw new ArgumentNullException(nameof(services));
@@ -142,6 +216,15 @@ namespace Microsoft.Extensions.DependencyInjection {
             return services;
         }
 
+        /// <summary>
+        /// Resolves a named mapper instance from the service provider.
+        /// </summary>
+        /// <param name="serviceProvider">The service provider.</param>
+        /// <param name="name">The mapper name.</param>
+        /// <returns>The resolved mapper instance.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="serviceProvider"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no mapper is registered for the given name.</exception>
         public static Mapify.NET.IMapify GetMapify(this IServiceProvider serviceProvider, string name) {
             if (serviceProvider == null) {
                 throw new ArgumentNullException(nameof(serviceProvider));

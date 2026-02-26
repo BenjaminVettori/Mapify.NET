@@ -495,6 +495,25 @@ namespace Mapify.NET.Tests
             Assert.Null(mapped.Child);
         }
 
+        [Fact]
+        public void ProjectTo_IQueryable_ShouldApplyRegisteredMap_AndAllowFurtherComposition()
+        {
+            Mapper.AddMap<A2, B2>(x => new B2 { Prop = x.Prop + 1 });
+
+            var projectedValues = new[] {
+                    new A2 { Prop = 1 },
+                    new A2 { Prop = 2 },
+                    new A2 { Prop = 3 }
+                }
+                .AsQueryable()
+                .ProjectTo<B2>()
+                .Where(x => x.Prop > 2)
+                .Select(x => x.Prop)
+                .ToArray();
+
+            Assert.Equal([3, 4], projectedValues);
+        }
+
         private static Expression<Func<TSource, TTarget>> CreateMapWithResolver<TSource, TTarget>(
             Expression<Func<TSource, TTarget>>? partial,
             Func<Type, Type, string?, LambdaExpression?>? resolver
