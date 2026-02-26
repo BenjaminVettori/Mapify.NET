@@ -102,10 +102,10 @@ public class MapifyNetFrameworkEf6Tests {
 
             db.SaveChanges();
 
-            var mapify = new Mapify(new IMapifyProfile[] {
+            var mapify = new Mapify([
                 new Ef6PhoneProfile(),
                 new Ef6PersonCollectionsProfile()
-            });
+            ]);
 
             var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonCollectionsDto>();
 
@@ -116,12 +116,12 @@ public class MapifyNetFrameworkEf6Tests {
 
             Assert.Equal(2, result.Count);
             Assert.Equal("Ada Lovelace", result[0].FullName);
-            Assert.Equal(new[] { "+44-100", "+44-101" }, result[0].PhonesList.Select(x => x.Number).ToArray());
-            Assert.Equal(new[] { "+44-100", "+44-101" }, result[0].PhonesEnumerable.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100", "+44-101"], result[0].PhonesList.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100", "+44-101"], result[0].PhonesEnumerable.Select(x => x.Number).ToArray());
 
             Assert.Equal("Alan Turing", result[1].FullName);
-            Assert.Equal(new[] { "+44-200" }, result[1].PhonesList.Select(x => x.Number).ToArray());
-            Assert.Equal(new[] { "+44-200" }, result[1].PhonesEnumerable.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-200"], result[1].PhonesList.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-200"], result[1].PhonesEnumerable.Select(x => x.Number).ToArray());
         }
     }
 
@@ -198,11 +198,11 @@ public class MapifyNetFrameworkEf6Tests {
 
             db.SaveChanges();
 
-            var mapify = new Mapify(new IMapifyProfile[] {
+            var mapify = new Mapify([
                 new Ef6AddressProfile(),
                 new Ef6PhoneProfile(),
                 new Ef6PersonImplicitNestedAndCollectionsProfile()
-            });
+            ]);
 
             var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonImplicitNestedAndCollectionsDto>();
 
@@ -214,11 +214,11 @@ public class MapifyNetFrameworkEf6Tests {
             Assert.Equal(2, result.Count);
             Assert.Equal("Ada Lovelace", result[0].FullName);
             Assert.Equal("London", result[0].HomeAddress.City);
-            Assert.Equal(new[] { "+44-100", "+44-101" }, result[0].Phones.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100", "+44-101"], result[0].Phones.Select(x => x.Number).ToArray());
 
             Assert.Equal("Alan Turing", result[1].FullName);
             Assert.Equal("Manchester", result[1].HomeAddress.City);
-            Assert.Equal(new[] { "+44-200" }, result[1].Phones.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-200"], result[1].Phones.Select(x => x.Number).ToArray());
         }
     }
 
@@ -251,10 +251,10 @@ public class MapifyNetFrameworkEf6Tests {
 
             db.SaveChanges();
 
-            var mapify = new Mapify(new IMapifyProfile[] {
+            var mapify = new Mapify([
                 new Ef6PhoneProfile(),
                 new Ef6PersonFilteredPhonesProfile()
-            });
+            ]);
 
             var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonFilteredPhonesDto>();
 
@@ -264,8 +264,8 @@ public class MapifyNetFrameworkEf6Tests {
                 .ToList();
 
             Assert.Equal(2, result.Count);
-            Assert.Equal(new[] { "+44-100", "+44-101" }, result[0].Students.Select(x => x.Number).ToArray());
-            Assert.Equal(new[] { "+44-200" }, result[1].Students.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100", "+44-101"], result[0].Students.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-200"], result[1].Students.Select(x => x.Number).ToArray());
         }
     }
 
@@ -287,10 +287,10 @@ public class MapifyNetFrameworkEf6Tests {
 
             db.SaveChanges();
 
-            var mapify = new Mapify(new IMapifyProfile[] {
+            var mapify = new Mapify([
                 new Ef6NamedPhoneProfile(),
                 new Ef6NamedPersonProfile()
-            });
+            ]);
 
             var mapExpr = mapify.GetMap<Ef6Person, Ef6NamedPhonesDto>();
 
@@ -299,8 +299,8 @@ public class MapifyNetFrameworkEf6Tests {
                 .Select(mapExpr)
                 .Single();
 
-            Assert.Equal(new[] { "+44-100", "+44-101" }, result.PhonesRaw.Select(x => x.Number).ToArray());
-            Assert.Equal(new[] { "+44-100 [MASKED]", "+44-101 [MASKED]" }, result.PhonesMasked.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100", "+44-101"], result.PhonesRaw.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100 [MASKED]", "+44-101 [MASKED]"], result.PhonesMasked.Select(x => x.Number).ToArray());
         }
     }
 
@@ -323,10 +323,10 @@ public class MapifyNetFrameworkEf6Tests {
 
             db.SaveChanges();
 
-            var mapify = new Mapify(new IMapifyProfile[] {
+            var mapify = new Mapify([
                 new Ef6PhoneProfile(),
                 new Ef6PersonChainedPhonesProfile()
-            });
+            ]);
 
             var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonChainedPhonesDto>();
 
@@ -334,7 +334,7 @@ public class MapifyNetFrameworkEf6Tests {
                 .Select(mapExpr)
                 .Single();
 
-            Assert.Equal(new[] { "+44-100", "+44-200", "+44-300" }, result.PhonesOrdered.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100", "+44-200", "+44-300"], result.PhonesOrdered.Select(x => x.Number).ToArray());
         }
     }
 
@@ -356,10 +356,10 @@ public class MapifyNetFrameworkEf6Tests {
 
             db.SaveChanges();
 
-            var mapify = new Mapify(new IMapifyProfile[] {
+            var mapify = new Mapify([
                 new Ef6NamedPhoneProfile(),
                 new Ef6NamedPersonChainedProfile()
-            });
+            ]);
 
             var mapExpr = mapify.GetMap<Ef6Person, Ef6NamedPersonChainedPhonesDto>();
 
@@ -367,7 +367,7 @@ public class MapifyNetFrameworkEf6Tests {
                 .Select(mapExpr)
                 .Single();
 
-            Assert.Equal(new[] { "+44-100 [MASKED]", "+44-300 [MASKED]" }, result.PhonesOrdered.Select(x => x.Number).ToArray());
+            Assert.Equal(["+44-100 [MASKED]", "+44-300 [MASKED]"], result.PhonesOrdered.Select(x => x.Number).ToArray());
         }
     }
 
@@ -391,10 +391,10 @@ public class MapifyNetFrameworkEf6Tests {
 
             db.SaveChanges();
 
-            var mapify = new Mapify(new IMapifyProfile[] {
+            var mapify = new Mapify([
                 new Ef6IntIdentityProfile(),
                 new Ef6PersonCalculationProfile()
-            });
+            ]);
 
             var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonCalculationDto>();
 

@@ -1,16 +1,13 @@
 using System.Linq.Expressions;
 
 namespace Mapify.NET {
-    public interface IMapifyProfile {
-    }
-
     internal interface IMapifyConfigurator {
         void CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null);
 
         void CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial = null);
     }
 
-    public abstract class MapifyProfile : IMapifyProfile {
+    public abstract class MapifyProfile {
         private IMapifyConfigurator? _configurator;
 
         internal void Apply(IMapifyConfigurator configurator) {

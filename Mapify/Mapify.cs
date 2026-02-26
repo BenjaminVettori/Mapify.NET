@@ -16,21 +16,17 @@ namespace Mapify.NET {
 
         private readonly Dictionary<MapKey, Delegate> _compiledMapToNewCache = [];
 
-        public Mapify(params IMapifyProfile[] profiles)
-            : this((IEnumerable<IMapifyProfile>)profiles) {
+        public Mapify(params MapifyProfile[] profiles)
+            : this((IEnumerable<MapifyProfile>)profiles) {
         }
 
-        public Mapify(IEnumerable<IMapifyProfile>? profiles = null) {
+        public Mapify(IEnumerable<MapifyProfile>? profiles = null) {
             if (profiles == null) {
                 return;
             }
 
             foreach (var profile in profiles) {
-                if (profile is not MapifyProfile mapifyProfile) {
-                    throw new ArgumentException($"Profile '{profile.GetType().FullName}' must inherit from {nameof(MapifyProfile)}.");
-                }
-
-                mapifyProfile.Apply(this);
+                profile.Apply(this);
             }
 
             BuildRegisteredMaps();

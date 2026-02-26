@@ -713,7 +713,7 @@ namespace Mapify.NET {
             var selectExpr = Expression.Call(
                 typeof(Enumerable),
                 nameof(Enumerable.Select),
-                new[] { sourceAccessElementType, destinationElementType },
+                [sourceAccessElementType, destinationElementType],
                 sourceAccess,
                 selector
             );
@@ -777,7 +777,7 @@ namespace Mapify.NET {
                 materialized = Expression.Call(
                     typeof(Enumerable),
                     nameof(Enumerable.ToArray),
-                    new[] { destinationElementType },
+                    [destinationElementType],
                     enumerableExpression
                 );
                 return true;
@@ -791,7 +791,7 @@ namespace Mapify.NET {
             var toListExpr = Expression.Call(
                 typeof(Enumerable),
                 nameof(Enumerable.ToList),
-                new[] { destinationElementType },
+                [destinationElementType],
                 enumerableExpression
             );
 
@@ -803,7 +803,7 @@ namespace Mapify.NET {
             }
 
             var ienumerableOfTarget = typeof(IEnumerable<>).MakeGenericType(destinationElementType);
-            var ctor = destinationType.GetConstructor(new[] { ienumerableOfTarget });
+            var ctor = destinationType.GetConstructor([ienumerableOfTarget]);
             if (ctor != null) {
                 materialized = Expression.New(ctor, enumerableExpression);
                 return true;

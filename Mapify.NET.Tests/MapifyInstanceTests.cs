@@ -287,6 +287,111 @@ namespace Mapify.NET.Tests {
             public decimal MaxTemperatureCelsius { get; set; }
         }
 
+        private enum FaultProfileMode {
+            None,
+            WhitespaceName,
+            UseMapMissingDirect,
+            UseMapInvalidNameDirect,
+            UseMapNoMapNested,
+            UseMapInvalidNameNested,
+            UseMapFieldBinding,
+            CoalesceBinding
+        }
+
+        private class FaultChildSource {
+            public int Value { get; set; }
+        }
+
+        private class FaultChildTarget {
+            public int Value { get; set; }
+        }
+
+        private class FaultSource {
+            public FaultChildSource Child { get; set; } = new FaultChildSource();
+            public int? MaybeValue { get; set; }
+        }
+
+        private class FaultTarget {
+            public FaultChildTarget Child { get; set; } = new FaultChildTarget();
+            public string Text { get; set; } = string.Empty;
+            public int Value { get; set; }
+        }
+
+        private class FaultTargetWithField {
+            public FaultChildTarget Child = new FaultChildTarget();
+        }
+
+        private class FaultProfile : MapifyProfile {
+            public static FaultProfileMode Mode { get; set; }
+
+            protected override void Configure() {
+                var mode = Mode;
+
+                if (mode == FaultProfileMode.WhitespaceName) {
+                    CreateMap<FaultSource, FaultTarget>(" ");
+                    return;
+                }
+
+                if (mode == FaultProfileMode.CoalesceBinding) {
+                    CreateMap<FaultSource, FaultTarget>(x => new FaultTarget {
+                        Value = x.MaybeValue ?? 123
+                    });
+                    return;
+                }
+
+                if (mode != FaultProfileMode.UseMapMissingDirect && mode != FaultProfileMode.UseMapNoMapNested) {
+                    CreateMap<FaultChildSource, FaultChildTarget>(x => new FaultChildTarget { Value = x.Value + 1 });
+                }
+
+                if (mode == FaultProfileMode.UseMapMissingDirect) {
+                    CreateMap<FaultSource, FaultTarget>(x => new FaultTarget {
+                        Child = UseMap<FaultChildSource, FaultChildTarget>(x.Child)
+                    });
+                    return;
+                }
+
+                if (mode == FaultProfileMode.UseMapInvalidNameDirect) {
+                    var name = "fault";
+                    CreateMap<FaultSource, FaultTarget>(x => new FaultTarget {
+                        Child = UseMap<FaultChildSource, FaultChildTarget>(name, x.Child)
+                    });
+                    return;
+                }
+
+                if (mode == FaultProfileMode.UseMapNoMapNested) {
+                    CreateMap<FaultSource, FaultTarget>(x => new FaultTarget {
+                        Text = UseMap<FaultChildSource, FaultChildTarget>(x.Child).ToString()!
+                    });
+                    return;
+                }
+
+                if (mode == FaultProfileMode.UseMapInvalidNameNested) {
+                    var name = "fault";
+                    CreateMap<FaultSource, FaultTarget>(x => new FaultTarget {
+                        Text = UseMap<FaultChildSource, FaultChildTarget>(name, x.Child).ToString()!
+                    });
+                    return;
+                }
+
+                if (mode == FaultProfileMode.UseMapFieldBinding) {
+                    CreateMap<FaultSource, FaultTargetWithField>(x => new FaultTargetWithField {
+                        Child = UseMap<FaultChildSource, FaultChildTarget>(x.Child)
+                    });
+                    return;
+                }
+
+                CreateMap<FaultSource, FaultTarget>(x => new FaultTarget {
+                    Child = UseMap<FaultChildSource, FaultChildTarget>(x.Child)
+                });
+            }
+        }
+
+        private class NamedValueOnlyProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<NameSource, string>("ByName", x => x.Name);
+            }
+        }
+
         private enum SourceStatus {
             Inactive = 0,
             Active = 1
@@ -313,6 +418,12 @@ namespace Mapify.NET.Tests {
             protected override void Configure() {
                 CreateMap<NameSource, string>(x => x.Name);
                 CreateMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
+            }
+        }
+
+        private class NamedObjectProfile : MapifyProfile {
+            protected override void Configure() {
+                CreateMap<SourceA, TargetA>("NamedObj", x => new TargetA { ValueA = x.ValueA + 1 });
             }
         }
 
@@ -578,7 +689,7 @@ namespace Mapify.NET.Tests {
 
         [Fact]
         public void Constructor_ShouldConfigureAllProfiles() {
-            var mapify = new Mapify(new IMapifyProfile[] { new ProfileA(), new ProfileB() });
+            var mapify = new Mapify([new ProfileA(), new ProfileB()]);
 
             var aResult = mapify.Map<SourceA, TargetA>(new SourceA { ValueA = 7 });
             var bResult = mapify.Map<SourceB, TargetB>(new SourceB { ValueB = "ok" });
@@ -601,6 +712,102 @@ namespace Mapify.NET.Tests {
         }
 
         [Fact]
+        public void Constructor_ShouldAllowNullProfileSequence() {
+            var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+
+            var mapped = mapify.Map<SourceA, TargetA>(new SourceA { ValueA = 9 }, useDefaultMapIfTypeMapIsMissing: true);
+
+            Assert.Equal(9, mapped.ValueA);
+        }
+
+        [Fact]
+        public void Constructor_ShouldThrow_WhenWhitespaceMapNameIsConfigured() {
+            FaultProfile.Mode = FaultProfileMode.WhitespaceName;
+            try {
+                Assert.Throws<ArgumentException>(() => new Mapify(new FaultProfile()));
+            } finally {
+                FaultProfile.Mode = FaultProfileMode.None;
+            }
+        }
+
+        [Fact]
+        public void Constructor_ShouldThrow_WhenUseMapHasMissingMap_DirectBinding() {
+            FaultProfile.Mode = FaultProfileMode.UseMapMissingDirect;
+            try {
+                Assert.ThrowsAny<Exception>(() => new Mapify(new FaultProfile()));
+            } finally {
+                FaultProfile.Mode = FaultProfileMode.None;
+            }
+        }
+
+        [Fact]
+        public void Constructor_ShouldThrow_WhenUseMapNameIsNotConstant_DirectBinding() {
+            FaultProfile.Mode = FaultProfileMode.UseMapInvalidNameDirect;
+            try {
+                Assert.ThrowsAny<Exception>(() => new Mapify(new FaultProfile()));
+            } finally {
+                FaultProfile.Mode = FaultProfileMode.None;
+            }
+        }
+
+        [Fact]
+        public void Constructor_ShouldThrow_WhenUseMapHasMissingMap_NestedCall() {
+            FaultProfile.Mode = FaultProfileMode.UseMapNoMapNested;
+            try {
+                Assert.ThrowsAny<Exception>(() => new Mapify(new FaultProfile()));
+            } finally {
+                FaultProfile.Mode = FaultProfileMode.None;
+            }
+        }
+
+        [Fact]
+        public void Constructor_ShouldThrow_WhenUseMapNameIsNotConstant_NestedCall() {
+            FaultProfile.Mode = FaultProfileMode.UseMapInvalidNameNested;
+            try {
+                Assert.ThrowsAny<Exception>(() => new Mapify(new FaultProfile()));
+            } finally {
+                FaultProfile.Mode = FaultProfileMode.None;
+            }
+        }
+
+        [Fact]
+        public void Constructor_ShouldThrow_WhenUseMapIsBoundToField() {
+            FaultProfile.Mode = FaultProfileMode.UseMapFieldBinding;
+            try {
+                Assert.ThrowsAny<Exception>(() => new Mapify(new FaultProfile()));
+            } finally {
+                FaultProfile.Mode = FaultProfileMode.None;
+            }
+        }
+
+        [Fact]
+        public void Constructor_ShouldSupportCoalesceBindingsInPartialMap() {
+            FaultProfile.Mode = FaultProfileMode.CoalesceBinding;
+            try {
+                var mapify = new Mapify(new FaultProfile());
+                var mapped = mapify.Map<FaultSource, FaultTarget>(new FaultSource { MaybeValue = null });
+                Assert.Equal(123, mapped.Value);
+            } finally {
+                FaultProfile.Mode = FaultProfileMode.None;
+            }
+        }
+
+        [Fact]
+        public void Configurator_CreateMapNamed_ShouldThrow_WhenNameIsWhitespace() {
+            var mapify = new Mapify();
+            var method = typeof(Mapify)
+                .GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .Single(x => x.Name.Contains("IMapifyConfigurator.CreateMap")
+                    && x.GetParameters().Length == 2
+                    && x.GetParameters()[0].ParameterType == typeof(string));
+
+            var generic = method.MakeGenericMethod(typeof(SourceA), typeof(TargetA));
+            var ex = Assert.Throws<System.Reflection.TargetInvocationException>(() => generic.Invoke(mapify, [" ", null]));
+
+            Assert.IsType<ArgumentException>(ex.InnerException);
+        }
+
+        [Fact]
         public void Map_ShouldSupportValueMappingsFromProfiles() {
             var mapify = new Mapify(new ValueMapProfile());
 
@@ -618,6 +825,55 @@ namespace Mapify.NET.Tests {
             var target = string.Empty;
 
             Assert.Throws<NotSupportedException>(() => mapify.Map(source, target));
+        }
+
+        [Fact]
+        public void Map_ToExisting_DefaultMap_ShouldWorkAcrossRepeatedCalls() {
+            var mapify = new Mapify();
+            var target = new TargetA();
+
+            mapify.Map(new SourceA { ValueA = 2 }, target, useDefaultMapIfTypeMapIsMissing: true);
+            mapify.Map(new SourceA { ValueA = 5 }, target, useDefaultMapIfTypeMapIsMissing: true);
+
+            Assert.Equal(5, target.ValueA);
+        }
+
+        [Fact]
+        public void Map_ToExisting_NamedObjectMap_ShouldWorkAcrossRepeatedCalls() {
+            var mapify = new Mapify(new NamedObjectProfile());
+            var target = new TargetA();
+
+            mapify.Map(new SourceA { ValueA = 1 }, target, "NamedObj");
+            mapify.Map(new SourceA { ValueA = 4 }, target, "NamedObj");
+
+            Assert.Equal(5, target.ValueA);
+        }
+
+        [Fact]
+        public void Map_ToExisting_NamedObjectMap_ShouldCompileWhenExistingCacheIsCleared() {
+            var mapify = new Mapify(new NamedObjectProfile());
+            ClearPrivateDictionary(mapify, "_compiledMapToExistingCache");
+
+            var target = new TargetA();
+            mapify.Map(new SourceA { ValueA = 7 }, target, "NamedObj");
+
+            Assert.Equal(8, target.ValueA);
+        }
+
+        [Fact]
+        public void Map_ToNew_NamedObjectMap_ShouldCompileWhenNewCacheIsCleared() {
+            var mapify = new Mapify(new NamedObjectProfile());
+            ClearPrivateDictionary(mapify, "_compiledMapToNewCache");
+
+            var mapped = mapify.Map<SourceA, TargetA>(new SourceA { ValueA = 10 }, "NamedObj");
+
+            Assert.Equal(11, mapped.ValueA);
+        }
+
+        private static void ClearPrivateDictionary(Mapify mapify, string fieldName) {
+            var field = typeof(Mapify).GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            var dictionary = field.GetValue(mapify)!;
+            dictionary.GetType().GetMethod("Clear")!.Invoke(dictionary, null);
         }
 
         [Fact]
@@ -795,23 +1051,23 @@ namespace Mapify.NET.Tests {
             var mapify = new Mapify(new CollectionUseMapProfile(), new ElementProfile());
 
             var source = new CollectionUseMapSource {
-                ItemsArray = new[] {
+                ItemsArray = [
                     new ElementSource { Value = 1 },
                     new ElementSource { Value = 2 }
-                },
-                ItemsList = new List<ElementSource> {
+                ],
+                ItemsList = [
                     new ElementSource { Value = 3 },
                     new ElementSource { Value = 4 }
-                }
+                ]
             };
 
             var mapped = mapify.Map<CollectionUseMapSource, CollectionUseMapTarget>(source);
 
-            Assert.Equal(new[] { 2, 3 }, mapped.ItemsArray.Select(x => x.Value).ToArray());
-            Assert.Equal(new[] { 4, 5 }, mapped.ItemsList.Select(x => x.Value).ToArray());
-            Assert.Equal(new[] { 2, 3 }, mapped.ItemsEnumerable.Select(x => x.Value).ToArray());
-            Assert.Equal(new[] { 4, 5 }, mapped.ItemsCollection.Select(x => x.Value).ToArray());
-            Assert.Equal(new[] { 2, 3 }, mapped.ItemsArrayAsList.Select(x => x.Value).ToArray());
+            Assert.Equal([2, 3], mapped.ItemsArray.Select(x => x.Value).ToArray());
+            Assert.Equal([4, 5], mapped.ItemsList.Select(x => x.Value).ToArray());
+            Assert.Equal([2, 3], mapped.ItemsEnumerable.Select(x => x.Value).ToArray());
+            Assert.Equal([4, 5], mapped.ItemsCollection.Select(x => x.Value).ToArray());
+            Assert.Equal([2, 3], mapped.ItemsArrayAsList.Select(x => x.Value).ToArray());
         }
 
         [Fact]
@@ -819,7 +1075,7 @@ namespace Mapify.NET.Tests {
             var mapify = new Mapify(new ImplicitPrimitiveCollectionsProfile());
 
             var source = new ImplicitPrimitiveCollectionsSource {
-                Numbers = new[] { 1, 2, 3 },
+                Numbers = [1, 2, 3],
                 Texts = new List<string> { "a", "b" }
             };
 
@@ -834,15 +1090,15 @@ namespace Mapify.NET.Tests {
             var mapify = new Mapify(new ImplicitCollectionParentProfile(), new ElementProfile());
 
             var source = new ImplicitCollectionParentSource {
-                Items = new[] {
+                Items = [
                     new ElementSource { Value = 1 },
                     new ElementSource { Value = 2 }
-                }
+                ]
             };
 
             var mapped = mapify.Map<ImplicitCollectionParentSource, ImplicitCollectionParentTarget>(source);
 
-            Assert.Equal(new[] { 2, 3 }, mapped.Items.Select(x => x.Value).ToArray());
+            Assert.Equal([2, 3], mapped.Items.Select(x => x.Value).ToArray());
         }
 
         [Fact]
@@ -898,6 +1154,47 @@ namespace Mapify.NET.Tests {
         [Fact]
         public void Constructor_ShouldThrow_WhenDuplicateNamedMappingIsRegistered() {
             Assert.Throws<ArgumentException>(() => new Mapify(new NamedPersonValueMapsProfile(), new NamedPersonValueMapsProfile()));
+        }
+
+        [Fact]
+        public void Map_Named_ToExisting_ShouldThrowForValueMappingInInstanceMapper() {
+            var mapify = new Mapify(new NamedValueOnlyProfile());
+            var source = new NameSource { Name = "Mapify" };
+            var target = string.Empty;
+
+            Assert.Throws<NotSupportedException>(() => mapify.Map(source, target, "ByName"));
+        }
+
+        [Fact]
+        public void GetMap_Named_ShouldThrow_WhenNameIsWhitespace() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+
+            Assert.Throws<ArgumentException>(() => mapify.GetMap<NamedPerson, string>(" "));
+        }
+
+        [Fact]
+        public void Map_Named_ShouldThrow_WhenNameIsWhitespace() {
+            var mapify = new Mapify(new NamedPersonValueMapsProfile());
+
+            Assert.Throws<ArgumentException>(() => mapify.Map<NamedPerson, string>(new NamedPerson(), " "));
+        }
+
+        [Fact]
+        public void Map_ToExisting_Named_ShouldThrow_WhenNameIsWhitespace() {
+            var mapify = new Mapify(new NamedValueOnlyProfile());
+
+            Assert.Throws<ArgumentException>(() => mapify.Map(new NameSource { Name = "x" }, string.Empty, " "));
+        }
+
+        [Fact]
+        public void GetMap_Default_ShouldReturnCachedDefaultExpression_OnSecondCall() {
+            var mapify = new Mapify();
+            mapify.UseDefaultMapIfTypeMapIsMissing(true);
+
+            var first = mapify.GetMap<SourceA, TargetA>();
+            var second = mapify.GetMap<SourceA, TargetA>();
+
+            Assert.Same(first, second);
         }
 
         [Fact]

@@ -128,6 +128,92 @@ public class MapifyDiExtensionsTests : IClassFixture<MapifyDiExtensionsTests.Map
         Assert.Equal("module-b", mappedB.Text);
     }
 
+    [Fact]
+    public void AddMapify_ShouldThrow_WhenServicesIsNull() {
+        Assert.Throws<ArgumentNullException>(() => MapifyServiceCollectionExtensions.AddMapify(null!));
+    }
+
+    [Fact]
+    public void AddMapify_WithLifecycleAndAssemblies_ShouldThrow_WhenServicesIsNull() {
+        Assert.Throws<ArgumentNullException>(() => MapifyServiceCollectionExtensions.AddMapify(null!, ServiceLifetime.Singleton, typeof(DiProfileA).Assembly));
+    }
+
+    [Fact]
+    public void AddMapify_WithAssembliesOnly_ShouldThrow_WhenServicesIsNull() {
+        Assert.Throws<ArgumentNullException>(() => MapifyServiceCollectionExtensions.AddMapify(null!, typeof(DiProfileA).Assembly));
+    }
+
+    [Fact]
+    public void AddMapify_ShouldThrow_WhenLifecycleIsInvalid() {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddMapify((ServiceLifetime)999));
+    }
+
+    [Fact]
+    public void AddMapifyProfile_ShouldThrow_WhenMapperNameIsWhitespace() {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentException>(() => services.AddMapifyProfile<DiProfileA>(" "));
+    }
+
+    [Fact]
+    public void AddMapifyProfile_ShouldThrow_WhenServicesIsNull() {
+        Assert.Throws<ArgumentNullException>(() => MapifyServiceCollectionExtensions.AddMapifyProfile<DiProfileA>(null!));
+    }
+
+    [Fact]
+    public void AddMapifyNamed_ShouldThrow_WhenNameIsWhitespace() {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentException>(() => services.AddMapifyNamed(" "));
+    }
+
+    [Fact]
+    public void AddMapifyNamed_ShouldThrow_WhenLifecycleIsInvalid() {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddMapifyNamed("named", (ServiceLifetime)999));
+    }
+
+    [Fact]
+    public void AddMapifyProfiles_ShouldThrow_WhenMapperNameIsWhitespace() {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentException>(() => services.AddMapifyProfiles(" ", typeof(DiProfileA).Assembly));
+    }
+
+    [Fact]
+    public void AddMapifyProfiles_ShouldThrow_WhenServicesIsNull() {
+        Assert.Throws<ArgumentNullException>(() => MapifyServiceCollectionExtensions.AddMapifyProfiles(null!, typeof(DiProfileA).Assembly));
+    }
+
+    [Fact]
+    public void AddMapifyProfiles_ShouldThrow_WhenAssembliesArgumentIsNull() {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentNullException>(() => MapifyServiceCollectionExtensions.AddMapifyProfiles(services, "named", (System.Reflection.Assembly[])null!));
+    }
+
+    [Fact]
+    public void GetMapify_ShouldThrow_WhenServiceProviderIsNull() {
+        Assert.Throws<ArgumentNullException>(() => MapifyServiceCollectionExtensions.GetMapify(null!, "secondary"));
+    }
+
+    [Fact]
+    public void GetMapify_ShouldThrow_WhenNameIsWhitespace() {
+        using var provider = BuildProvider(services => services.AddMapifyNamed("secondary"));
+
+        Assert.Throws<ArgumentException>(() => provider.GetMapify(" "));
+    }
+
+    [Fact]
+    public void GetMapify_ShouldThrow_WhenNamedMapperIsMissing() {
+        using var provider = BuildProvider(services => services.AddMapifyNamed("existing"));
+
+        Assert.Throws<InvalidOperationException>(() => provider.GetMapify("missing"));
+    }
+
     public class DiSourceA {
         public int Value { get; set; }
     }

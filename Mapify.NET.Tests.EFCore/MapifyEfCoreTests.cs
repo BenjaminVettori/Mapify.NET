@@ -91,10 +91,10 @@ public class MapifyEfCoreTests {
 
         db.SaveChanges();
 
-        var mapify = new Mapify(new IMapifyProfile[] {
+        var mapify = new Mapify([
             new EfCorePhoneProfile(),
             new EfCorePersonCollectionsProfile()
-        });
+        ]);
 
         var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonCollectionsDto>();
 
@@ -191,11 +191,11 @@ public class MapifyEfCoreTests {
 
         db.SaveChanges();
 
-        var mapify = new Mapify(new IMapifyProfile[] {
+        var mapify = new Mapify([
             new EfCoreAddressProfile(),
             new EfCorePhoneProfile(),
             new EfCorePersonImplicitNestedAndArrayProfile()
-        });
+        ]);
 
         var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonImplicitNestedAndArrayDto>();
 
@@ -245,10 +245,10 @@ public class MapifyEfCoreTests {
 
         db.SaveChanges();
 
-        var mapify = new Mapify(new IMapifyProfile[] {
+        var mapify = new Mapify([
             new EfCorePhoneProfile(),
             new EfCorePersonFilteredPhonesProfile()
-        });
+        ]);
 
         var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonFilteredPhonesDto>();
 
@@ -282,10 +282,10 @@ public class MapifyEfCoreTests {
 
         db.SaveChanges();
 
-        var mapify = new Mapify(new IMapifyProfile[] {
+        var mapify = new Mapify([
             new EfCoreNamedPhoneProfile(),
             new EfCoreNamedPersonProfile()
-        });
+        ]);
 
         var mapExpr = mapify.GetMap<EfCorePerson, EfCoreNamedPhonesDto>();
 
@@ -319,10 +319,10 @@ public class MapifyEfCoreTests {
 
         db.SaveChanges();
 
-        var mapify = new Mapify(new IMapifyProfile[] {
+        var mapify = new Mapify([
             new EfCorePhoneProfile(),
             new EfCorePersonChainedPhonesProfile()
-        });
+        ]);
 
         var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonChainedPhonesDto>();
 
@@ -353,10 +353,10 @@ public class MapifyEfCoreTests {
 
         db.SaveChanges();
 
-        var mapify = new Mapify(new IMapifyProfile[] {
+        var mapify = new Mapify([
             new EfCoreNamedPhoneProfile(),
             new EfCoreNamedPersonChainedProfile()
-        });
+        ]);
 
         var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonChainedPhonesDto>();
 
@@ -390,10 +390,10 @@ public class MapifyEfCoreTests {
 
         db.SaveChanges();
 
-        var mapify = new Mapify(new IMapifyProfile[] {
+        var mapify = new Mapify([
             new EfCoreIntIdentityProfile(),
             new EfCorePersonCalculationProfile()
-        });
+        ]);
 
         var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonCalculationDto>();
 

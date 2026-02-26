@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 
 namespace Mapify.NET.Tests
 {
@@ -244,6 +245,16 @@ namespace Mapify.NET.Tests
         }
 
         [Fact]
+        public void GetMap_ShouldReturnCachedDefaultExpression_OnSecondCall()
+        {
+            var expr1 = Mapper.GetMap<A2, B2>(useDefaultMapIfTypeMapIsMissing: true);
+            var expr2 = Mapper.GetMap<A2, B2>(useDefaultMapIfTypeMapIsMissing: true);
+
+            Assert.NotNull(expr1);
+            Assert.Same(expr1, expr2);
+        }
+
+        [Fact]
         public void GetMap_ShouldReturnNull_WhenMapMissingAndDefaultDisabled()
         {
             // Arrange
@@ -280,6 +291,39 @@ namespace Mapify.NET.Tests
             
             // Assert
             Assert.Equal(50, target.Prop);
+        }
+
+        [Fact]
+        public void CompileMapper_ShouldThrow_WhenExpressionIsNotMemberInitializer()
+        {
+            Expression<Func<A2, B2>> expr = x => new B2();
+
+            Assert.Throws<ArgumentException>(() => Mapper.CompileMapper(expr));
+        }
+
+        [Fact]
+        public void CompileMapper_ShouldThrow_WhenBindingIsNotMemberAssignment()
+        {
+            Expression<Func<ListBindingSource, ListBindingTarget>> expr = x => new ListBindingTarget { Items = { x.Value } };
+
+            Assert.Throws<NotSupportedException>(() => Mapper.CompileMapper(expr));
+        }
+
+        [Fact]
+        public void Map_ExpressionOverload_WithCache_ShouldWorkForNewAndExistingTargets()
+        {
+            Expression<Func<A2, B2>> expr = x => new B2 { Prop = x.Prop + 1 };
+
+            var firstNew = expr.Map(new A2 { Prop = 1 }, cache: true);
+            var secondNew = expr.Map(new A2 { Prop = 2 }, cache: true);
+
+            var existing = new B2();
+            expr.Map(new A2 { Prop = 3 }, existing, cache: true);
+            expr.Map(new A2 { Prop = 4 }, existing, cache: true);
+
+            Assert.Equal(2, firstNew.Prop);
+            Assert.Equal(3, secondNew.Prop);
+            Assert.Equal(5, existing.Prop);
         }
 
         [Fact]
@@ -395,6 +439,74 @@ namespace Mapify.NET.Tests
             Assert.Equal(default, mappedWithNull.Item);
         }
 
+        [Fact]
+        public void CreateMap_ShouldMaterializeEnumerableIntoPropertyTypeWithIEnumerableConstructor()
+        {
+            var map = Mapper.CreateMap<EnumerableCtorSource, EnumerableCtorContainerTarget>();
+
+            var mapped = map.Map(new EnumerableCtorSource { Numbers = [1, 2, 3] });
+
+            Assert.Equal(new[] { 1, 2, 3 }, mapped.Numbers);
+        }
+
+        [Fact]
+        public void CreateMap_InternalResolverNull_ShouldFallbackWithoutExistingMapBinding()
+        {
+            var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, null);
+
+            var mapped = map.Map(new ResolverSource { Child = new ResolverInnerSource { Value = 8 } });
+
+            Assert.Null(mapped.Child);
+        }
+
+        [Fact]
+        public void CreateMap_InternalResolverWithInvalidParameterCount_ShouldFallbackWithoutBinding()
+        {
+            Func<Type, Type, string?, LambdaExpression?> resolver = (_, _, _) =>
+                (Expression<Func<ResolverInnerSource, ResolverInnerSource, ResolverInnerTarget>>)((left, right) => new ResolverInnerTarget { Value = left.Value + right.Value });
+
+            var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, resolver);
+            var mapped = map.Map(new ResolverSource { Child = new ResolverInnerSource { Value = 3 } });
+
+            Assert.Null(mapped.Child);
+        }
+
+        [Fact]
+        public void CreateMap_InternalResolverWithIncompatibleSourceParameter_ShouldFallbackWithoutBinding()
+        {
+            Func<Type, Type, string?, LambdaExpression?> resolver = (_, _, _) =>
+                (Expression<Func<string, ResolverInnerTarget>>)(text => new ResolverInnerTarget { Value = text.Length });
+
+            var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, resolver);
+            var mapped = map.Map(new ResolverSource { Child = new ResolverInnerSource { Value = 5 } });
+
+            Assert.Null(mapped.Child);
+        }
+
+        [Fact]
+        public void CreateMap_InternalResolverWithIncompatibleMappedResult_ShouldFallbackWithoutBinding()
+        {
+            Func<Type, Type, string?, LambdaExpression?> resolver = (_, _, _) =>
+                (Expression<Func<ResolverInnerSource, int>>)(x => x.Value);
+
+            var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, resolver);
+            var mapped = map.Map(new ResolverSource { Child = new ResolverInnerSource { Value = 6 } });
+
+            Assert.Null(mapped.Child);
+        }
+
+        private static Expression<Func<TSource, TTarget>> CreateMapWithResolver<TSource, TTarget>(
+            Expression<Func<TSource, TTarget>>? partial,
+            Func<Type, Type, string?, LambdaExpression?>? resolver
+        ) {
+            var method = typeof(Mapper)
+                .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+                .Single(x => x.Name == "CreateMap" && x.IsGenericMethodDefinition && x.GetParameters().Length == 2);
+
+            var generic = method.MakeGenericMethod(typeof(TSource), typeof(TTarget));
+            return (Expression<Func<TSource, TTarget>>)generic.Invoke(null, [partial, resolver])!;
+        }
+
         public class C1 { public int Id { get; set; } public string Name { get; set; } = string.Empty; }
         public class D1 { public int Id { get; set; } public string Name { get; set; } = string.Empty; }
 
@@ -431,6 +543,30 @@ namespace Mapify.NET.Tests
         public struct ComplexValue { public int Value { get; set; } }
         public class ComplexValueContainerSource { public ComplexValue? Item { get; set; } }
         public class ComplexValueContainerTarget { public ComplexValue Item { get; set; } }
+
+        public class ListBindingSource { public int Value { get; set; } }
+        public class ListBindingTarget { public List<int> Items { get; } = new List<int>(); }
+
+        public class EnumerableCtorSource { public int[] Numbers { get; set; } = Array.Empty<int>(); }
+        public class EnumerableCtorContainerTarget { public EnumerableCtorCollection Numbers { get; set; } = new EnumerableCtorCollection(Array.Empty<int>()); }
+        public class EnumerableCtorCollection : IEnumerable<int> {
+            private readonly int[] _values;
+
+            public EnumerableCtorCollection(IEnumerable<int> values) {
+                _values = values.ToArray();
+            }
+
+            public int[] ToArray() => _values;
+
+            public IEnumerator<int> GetEnumerator() => ((IEnumerable<int>)_values).GetEnumerator();
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => _values.GetEnumerator();
+        }
+
+        public class ResolverInnerSource { public int Value { get; set; } }
+        public class ResolverInnerTarget { public int Value { get; set; } }
+        public class ResolverSource { public ResolverInnerSource Child { get; set; } = new ResolverInnerSource(); }
+        public class ResolverTarget { public ResolverInnerTarget? Child { get; set; } }
 
         public class PersonNameSource { public string Name { get; set; } = string.Empty; }
 

@@ -17,7 +17,7 @@ namespace Microsoft.Extensions.DependencyInjection {
                     sp => {
                         var registrations = sp.GetServices<Mapify.NET.MapifyProfileTypeRegistration>()
                             .Where(x => x.MapperName == null)
-                            .Select(x => (Mapify.NET.IMapifyProfile)sp.GetRequiredService(x.ProfileType))
+                            .Select(x => (Mapify.NET.MapifyProfile)sp.GetRequiredService(x.ProfileType))
                             .ToArray();
 
                         return new Mapify.NET.Mapify(registrations);
@@ -46,12 +46,12 @@ namespace Microsoft.Extensions.DependencyInjection {
         }
 
         public static IServiceCollection AddMapifyProfile<TProfile>(this IServiceCollection services)
-            where TProfile : class, Mapify.NET.IMapifyProfile {
+            where TProfile : Mapify.NET.MapifyProfile {
             return services.AddMapifyProfile<TProfile>(null);
         }
 
         public static IServiceCollection AddMapifyProfile<TProfile>(this IServiceCollection services, string? mapperName)
-            where TProfile : class, Mapify.NET.IMapifyProfile {
+            where TProfile : Mapify.NET.MapifyProfile {
             if (services == null) {
                 throw new ArgumentNullException(nameof(services));
             }
@@ -87,7 +87,7 @@ namespace Microsoft.Extensions.DependencyInjection {
                     sp => {
                         var registrations = sp.GetServices<Mapify.NET.MapifyProfileTypeRegistration>()
                             .Where(x => string.Equals(x.MapperName, name, StringComparison.Ordinal))
-                            .Select(x => (Mapify.NET.IMapifyProfile)sp.GetRequiredService(x.ProfileType))
+                            .Select(x => (Mapify.NET.MapifyProfile)sp.GetRequiredService(x.ProfileType))
                             .ToArray();
 
                         var mapper = new Mapify.NET.Mapify(registrations);
@@ -131,7 +131,7 @@ namespace Microsoft.Extensions.DependencyInjection {
 
             foreach (var assembly in profileAssemblies.Distinct()) {
                 foreach (var type in GetLoadableTypes(assembly)) {
-                    if (!typeof(Mapify.NET.IMapifyProfile).IsAssignableFrom(type) || type.IsAbstract || type.IsInterface) {
+                    if (!typeof(Mapify.NET.MapifyProfile).IsAssignableFrom(type) || type.IsAbstract || type.IsInterface) {
                         continue;
                     }
 
