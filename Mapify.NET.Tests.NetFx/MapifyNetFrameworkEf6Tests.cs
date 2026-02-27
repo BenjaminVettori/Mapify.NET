@@ -107,7 +107,7 @@ public class MapifyNetFrameworkEf6Tests {
                 new Ef6PersonCollectionsProfile()
             ]);
 
-            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonCollectionsDto>();
+            var mapExpr = mapify.GetRequiredMap<Ef6Person, Ef6PersonCollectionsDto>();
 
             var result = db.People
                 .OrderBy(x => x.Id)
@@ -287,7 +287,7 @@ public class MapifyNetFrameworkEf6Tests {
                 new Ef6PersonImplicitNestedAndCollectionsProfile()
             ]);
 
-            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonImplicitNestedAndCollectionsDto>();
+            var mapExpr = mapify.GetRequiredMap<Ef6Person, Ef6PersonImplicitNestedAndCollectionsDto>();
 
             var result = db.People
                 .OrderBy(x => x.Id)
@@ -382,7 +382,7 @@ public class MapifyNetFrameworkEf6Tests {
                 new Ef6PersonFilteredPhonesProfile()
             ]);
 
-            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonFilteredPhonesDto>();
+            var mapExpr = mapify.GetRequiredMap<Ef6Person, Ef6PersonFilteredPhonesDto>();
 
             var result = db.People
                 .OrderBy(x => x.Id)
@@ -418,7 +418,7 @@ public class MapifyNetFrameworkEf6Tests {
                 new Ef6NamedPersonProfile()
             ]);
 
-            var mapExpr = mapify.GetMap<Ef6Person, Ef6NamedPhonesDto>();
+            var mapExpr = mapify.GetRequiredMap<Ef6Person, Ef6NamedPhonesDto>();
 
             var result = db.People
                 .OrderBy(x => x.Id)
@@ -454,7 +454,7 @@ public class MapifyNetFrameworkEf6Tests {
                 new Ef6PersonChainedPhonesProfile()
             ]);
 
-            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonChainedPhonesDto>();
+            var mapExpr = mapify.GetRequiredMap<Ef6Person, Ef6PersonChainedPhonesDto>();
 
             var result = db.People
                 .Select(mapExpr)
@@ -487,7 +487,7 @@ public class MapifyNetFrameworkEf6Tests {
                 new Ef6NamedPersonChainedProfile()
             ]);
 
-            var mapExpr = mapify.GetMap<Ef6Person, Ef6NamedPersonChainedPhonesDto>();
+            var mapExpr = mapify.GetRequiredMap<Ef6Person, Ef6NamedPersonChainedPhonesDto>();
 
             var result = db.People
                 .Select(mapExpr)
@@ -522,7 +522,7 @@ public class MapifyNetFrameworkEf6Tests {
                 new Ef6PersonCalculationProfile()
             ]);
 
-            var mapExpr = mapify.GetMap<Ef6Person, Ef6PersonCalculationDto>();
+            var mapExpr = mapify.GetRequiredMap<Ef6Person, Ef6PersonCalculationDto>();
 
             var result = db.People
                 .OrderBy(x => x.Id)
@@ -694,7 +694,7 @@ public class MapifyNetFrameworkEf6Tests {
     public class Ef6PersonCollectionsDto {
         public string FullName { get; set; } = string.Empty;
         public List<Ef6PhoneDto> PhonesList { get; set; } = new List<Ef6PhoneDto>();
-        public IEnumerable<Ef6PhoneDto> PhonesEnumerable { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+        public IEnumerable<Ef6PhoneDto> PhonesEnumerable { get; set; } = [];
     }
 
     public class Ef6PersonArrayCollectionsDto {
@@ -715,7 +715,7 @@ public class MapifyNetFrameworkEf6Tests {
 
     public class Ef6PrimitiveCollectionsDto {
         public List<int> Numbers { get; set; } = new List<int>();
-        public IEnumerable<string> Texts { get; set; } = Enumerable.Empty<string>();
+        public IEnumerable<string> Texts { get; set; } = [];
     }
 
     public class Ef6PrimitiveArrayCollectionsDto {
@@ -736,20 +736,20 @@ public class MapifyNetFrameworkEf6Tests {
     }
 
     public class Ef6PersonFilteredPhonesDto {
-        public IEnumerable<Ef6PhoneDto> Students { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+        public IEnumerable<Ef6PhoneDto> Students { get; set; } = [];
     }
 
     public class Ef6NamedPhonesDto {
-        public IEnumerable<Ef6PhoneDto> PhonesRaw { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
-        public IEnumerable<Ef6PhoneDto> PhonesMasked { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+        public IEnumerable<Ef6PhoneDto> PhonesRaw { get; set; } = [];
+        public IEnumerable<Ef6PhoneDto> PhonesMasked { get; set; } = [];
     }
 
     public class Ef6PersonChainedPhonesDto {
-        public IEnumerable<Ef6PhoneDto> PhonesOrdered { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+        public IEnumerable<Ef6PhoneDto> PhonesOrdered { get; set; } = [];
     }
 
     public class Ef6NamedPersonChainedPhonesDto {
-        public IEnumerable<Ef6PhoneDto> PhonesOrdered { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+        public IEnumerable<Ef6PhoneDto> PhonesOrdered { get; set; } = [];
     }
 
     public class Ef6PersonCalculationDto {
@@ -758,7 +758,7 @@ public class MapifyNetFrameworkEf6Tests {
     }
 
     public class Ef6ProjectToNamedPhonesDto {
-        public IEnumerable<Ef6PhoneDto> Phones { get; set; } = Enumerable.Empty<Ef6PhoneDto>();
+        public IEnumerable<Ef6PhoneDto> Phones { get; set; } = [];
     }
 
     private class Ef6PhoneProfile : MapifyProfile {

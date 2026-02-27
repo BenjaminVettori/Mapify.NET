@@ -20,18 +20,18 @@ public class MapifyEfCoreTests {
                 FirstName = "Grace",
                 LastName = "Hopper",
                 HomeAddress = graceAddress,
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+1-300" },
                     new EfCorePhone { Number = "+1-301" }
-                }
+                ]
             },
             new EfCorePerson {
                 FirstName = "Katherine",
                 LastName = "Johnson",
                 HomeAddress = katherineAddress,
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+1-400" }
-                }
+                ]
             }
         );
 
@@ -74,18 +74,18 @@ public class MapifyEfCoreTests {
                 FirstName = "Grace",
                 LastName = "Hopper",
                 HomeAddress = new EfCoreAddress { City = "New York" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+1-300" },
                     new EfCorePhone { Number = "+1-301" }
-                }
+                ]
             },
             new EfCorePerson {
                 FirstName = "Alan",
                 LastName = "Turing",
                 HomeAddress = new EfCoreAddress { City = "London" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+44-200" }
-                }
+                ]
             }
         );
 
@@ -96,7 +96,7 @@ public class MapifyEfCoreTests {
             new EfCorePersonCollectionsProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonCollectionsDto>();
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCorePersonCollectionsDto>();
 
         var result = db.People
             .OrderBy(x => x.Id)
@@ -126,18 +126,18 @@ public class MapifyEfCoreTests {
                 FirstName = "Grace",
                 LastName = "Hopper",
                 HomeAddress = new EfCoreAddress { City = "New York" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+1-300" },
                     new EfCorePhone { Number = "+1-301" }
-                }
+                ]
             },
             new EfCorePerson {
                 FirstName = "Alan",
                 LastName = "Turing",
                 HomeAddress = new EfCoreAddress { City = "London" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+44-200" }
-                }
+                ]
             }
         );
 
@@ -174,18 +174,18 @@ public class MapifyEfCoreTests {
                 FirstName = "Ada",
                 LastName = "Lovelace",
                 HomeAddress = new EfCoreAddress { City = "London" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+44-100" },
                     new EfCorePhone { Number = "+44-101" }
-                }
+                ]
             },
             new EfCorePerson {
                 FirstName = "Alan",
                 LastName = "Turing",
                 HomeAddress = new EfCoreAddress { City = "Manchester" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+44-200" }
-                }
+                ]
             }
         );
 
@@ -197,7 +197,7 @@ public class MapifyEfCoreTests {
             new EfCorePersonImplicitNestedAndArrayProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonImplicitNestedAndArrayDto>();
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCorePersonImplicitNestedAndArrayDto>();
 
         var result = db.People
             .OrderBy(x => x.Id)
@@ -226,20 +226,20 @@ public class MapifyEfCoreTests {
                 FirstName = "Ada",
                 LastName = "Lovelace",
                 HomeAddress = new EfCoreAddress { City = "London" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+44-100" },
                     new EfCorePhone { Number = "+44-101" },
                     new EfCorePhone { Number = "+1-300" }
-                }
+                ]
             },
             new EfCorePerson {
                 FirstName = "Alan",
                 LastName = "Turing",
                 HomeAddress = new EfCoreAddress { City = "Manchester" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+44-200" },
                     new EfCorePhone { Number = "+1-999" }
-                }
+                ]
             }
         );
 
@@ -250,7 +250,7 @@ public class MapifyEfCoreTests {
             new EfCorePersonFilteredPhonesProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonFilteredPhonesDto>();
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCorePersonFilteredPhonesDto>();
 
         var result = db.People
             .OrderBy(x => x.Id)
@@ -274,10 +274,10 @@ public class MapifyEfCoreTests {
             FirstName = "Ada",
             LastName = "Lovelace",
             HomeAddress = new EfCoreAddress { City = "London" },
-            Phones = new List<EfCorePhone> {
+            Phones = [
                 new EfCorePhone { Number = "+44-100" },
                 new EfCorePhone { Number = "+44-101" }
-            }
+            ]
         });
 
         db.SaveChanges();
@@ -287,7 +287,7 @@ public class MapifyEfCoreTests {
             new EfCoreNamedPersonProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCoreNamedPhonesDto>();
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCoreNamedPhonesDto>();
 
         var result = db.People
             .OrderBy(x => x.Id)
@@ -310,11 +310,11 @@ public class MapifyEfCoreTests {
             FirstName = "Ada",
             LastName = "Lovelace",
             HomeAddress = new EfCoreAddress { City = "London" },
-            Phones = new List<EfCorePhone> {
+            Phones = [
                 new EfCorePhone { Number = "+44-300" },
                 new EfCorePhone { Number = "+44-100" },
                 new EfCorePhone { Number = "+44-200" }
-            }
+            ]
         });
 
         db.SaveChanges();
@@ -324,7 +324,7 @@ public class MapifyEfCoreTests {
             new EfCorePersonChainedPhonesProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonChainedPhonesDto>();
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCorePersonChainedPhonesDto>();
 
         var result = db.People
             .Select(mapExpr)
@@ -345,10 +345,10 @@ public class MapifyEfCoreTests {
             FirstName = "Ada",
             LastName = "Lovelace",
             HomeAddress = new EfCoreAddress { City = "London" },
-            Phones = new List<EfCorePhone> {
+            Phones = [
                 new EfCorePhone { Number = "+44-300" },
                 new EfCorePhone { Number = "+44-100" }
-            }
+            ]
         });
 
         db.SaveChanges();
@@ -358,7 +358,7 @@ public class MapifyEfCoreTests {
             new EfCoreNamedPersonChainedProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonChainedPhonesDto>();
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCorePersonChainedPhonesDto>();
 
         var result = db.People
             .Select(mapExpr)
@@ -395,7 +395,7 @@ public class MapifyEfCoreTests {
             new EfCorePersonCalculationProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCorePersonCalculationDto>();
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCorePersonCalculationDto>();
 
         var result = db.People
             .OrderBy(x => x.Id)
@@ -418,18 +418,18 @@ public class MapifyEfCoreTests {
                 FirstName = "Grace",
                 LastName = "Hopper",
                 HomeAddress = new EfCoreAddress { City = "New York" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+1-300" },
                     new EfCorePhone { Number = "+1-301" }
-                }
+                ]
             },
             new EfCorePerson {
                 FirstName = "Alan",
                 LastName = "Turing",
                 HomeAddress = new EfCoreAddress { City = "London" },
-                Phones = new List<EfCorePhone> {
+                Phones = [
                     new EfCorePhone { Number = "+44-200" }
-                }
+                ]
             }
         );
 
@@ -467,10 +467,10 @@ public class MapifyEfCoreTests {
             FirstName = "Ada",
             LastName = "Lovelace",
             HomeAddress = new EfCoreAddress { City = "London" },
-            Phones = new List<EfCorePhone> {
+            Phones = [
                 new EfCorePhone { Number = "+44-100" },
                 new EfCorePhone { Number = "+44-101" }
-            }
+            ]
         });
 
         db.SaveChanges();
@@ -499,10 +499,10 @@ public class MapifyEfCoreTests {
             FirstName = "Ada",
             LastName = "Lovelace",
             HomeAddress = new EfCoreAddress { City = "London" },
-            Phones = new List<EfCorePhone> {
+            Phones = [
                 new EfCorePhone { Number = "+44-300" },
                 new EfCorePhone { Number = "+44-100" }
-            }
+            ]
         });
 
         db.SaveChanges();
@@ -512,7 +512,7 @@ public class MapifyEfCoreTests {
             new EfCoreNamedNestedProjectToPersonProfile()
         ]);
 
-        var mapExpr = mapify.GetMap<EfCorePerson, EfCoreProjectToNamedPhonesDto>("Masked");
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCoreProjectToNamedPhonesDto>("Masked");
 
         var result = db.People
             .Select(mapExpr)
@@ -533,7 +533,7 @@ public class MapifyEfCoreTests {
         public string LastName { get; set; } = string.Empty;
         public int? HomeAddressId { get; set; }
         public EfCoreAddress HomeAddress { get; set; } = null!;
-        public ICollection<EfCorePhone> Phones { get; set; } = new List<EfCorePhone>();
+        public ICollection<EfCorePhone> Phones { get; set; } = [];
     }
 
     private sealed class EfCoreAddress {
@@ -551,7 +551,7 @@ public class MapifyEfCoreTests {
     private sealed class EfCorePersonDto {
         public string FullName { get; set; } = string.Empty;
         public EfCoreAddressDto HomeAddress { get; set; } = null!;
-        public List<EfCorePhoneDto> Phones { get; set; } = new List<EfCorePhoneDto>();
+        public List<EfCorePhoneDto> Phones { get; set; } = [];
     }
 
     private sealed class EfCoreAddressDto {
@@ -564,37 +564,37 @@ public class MapifyEfCoreTests {
 
     private sealed class EfCorePersonCollectionsDto {
         public string FullName { get; set; } = string.Empty;
-        public EfCorePhoneDto[] PhonesArray { get; set; } = Array.Empty<EfCorePhoneDto>();
-        public List<EfCorePhoneDto> PhonesList { get; set; } = new List<EfCorePhoneDto>();
+        public EfCorePhoneDto[] PhonesArray { get; set; } = [];
+        public List<EfCorePhoneDto> PhonesList { get; set; } = [];
     }
 
     private sealed class EfCorePrimitiveCollectionsSource {
-        public int[] Numbers { get; set; } = Array.Empty<int>();
-        public ICollection<string> Texts { get; set; } = new List<string>();
+        public int[] Numbers { get; set; } = [];
+        public ICollection<string> Texts { get; set; } = [];
     }
 
     private sealed class EfCorePrimitiveCollectionsDto {
-        public List<int> Numbers { get; set; } = new List<int>();
-        public string[] Texts { get; set; } = Array.Empty<string>();
+        public List<int> Numbers { get; set; } = [];
+        public string[] Texts { get; set; } = [];
     }
 
     private sealed class EfCorePersonImplicitNestedAndArrayDto {
         public string FullName { get; set; } = string.Empty;
         public EfCoreAddressDto HomeAddress { get; set; } = null!;
-        public EfCorePhoneDto[] Phones { get; set; } = Array.Empty<EfCorePhoneDto>();
+        public EfCorePhoneDto[] Phones { get; set; } = [];
     }
 
     private sealed class EfCorePersonFilteredPhonesDto {
-        public IEnumerable<EfCorePhoneDto> Students { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+        public IEnumerable<EfCorePhoneDto> Students { get; set; } = [];
     }
 
     private sealed class EfCoreNamedPhonesDto {
-        public IEnumerable<EfCorePhoneDto> PhonesRaw { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
-        public IEnumerable<EfCorePhoneDto> PhonesMasked { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+        public IEnumerable<EfCorePhoneDto> PhonesRaw { get; set; } = [];
+        public IEnumerable<EfCorePhoneDto> PhonesMasked { get; set; } = [];
     }
 
     private sealed class EfCorePersonChainedPhonesDto {
-        public IEnumerable<EfCorePhoneDto> PhonesOrdered { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+        public IEnumerable<EfCorePhoneDto> PhonesOrdered { get; set; } = [];
     }
 
     private sealed class EfCorePersonCalculationDto {
@@ -603,7 +603,7 @@ public class MapifyEfCoreTests {
     }
 
     private sealed class EfCoreProjectToNamedPhonesDto {
-        public IEnumerable<EfCorePhoneDto> Phones { get; set; } = Enumerable.Empty<EfCorePhoneDto>();
+        public IEnumerable<EfCorePhoneDto> Phones { get; set; } = [];
     }
 
     private sealed class EfCorePhoneProfile : MapifyProfile {

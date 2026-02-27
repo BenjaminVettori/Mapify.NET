@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+
 using Mapify.TestProfiles.ModuleA;
 using Mapify.TestProfiles.ModuleB;
 
