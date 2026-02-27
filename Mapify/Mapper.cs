@@ -1,10 +1,17 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Mapify.NET; 
+/// <summary>
+/// Static mapper API for registering and executing mappings.
+/// </summary>
 public static class Mapper {
 
     private const string _useMapMarkerName = "UseMap";
+
+    private const string _ignoreMarkerName = "Ignore";
 
     private const string _projectToMarkerName = "ProjectTo";
 
@@ -59,6 +66,12 @@ public static class Mapper {
     /// Caches compiled mapping expressions which create new target objects
     /// </summary>
     private static readonly Dictionary<Expression, Delegate> _compiledSpecificMapToNewCache = [];
+
+    /// <summary>
+    /// Tracks destination member names marked via Ignore&lt;T&gt;() for generated map expressions.
+    /// The key is the generated map lambda, and the value is the set of ignored member names.
+    /// </summary>
+    private static readonly ConditionalWeakTable<LambdaExpression, HashSet<string>> _ignoredMembersByMap = new();
 
     /// <summary>
     /// Creates a new mapping with the optional partial mapping expression and adds it to the mapping dictionary
@@ -234,6 +247,8 @@ public static class Mapper {
     /// <exception cref="ArgumentException"></exception>
     /// <exception cref="NotSupportedException"></exception>
     public static Action<TSource, TTarget> CompileMapper<TSource, TTarget>(Expression<Func<TSource, TTarget>> expression) {
+        _ignoredMembersByMap.TryGetValue(expression, out HashSet<string>? ignoredMembers);
+
         if (expression.Body is not MemberInitExpression initExpr)
             throw new ArgumentException("Expression must be a member initializer (new TTarget { ... })");
 
@@ -244,6 +259,10 @@ public static class Mapper {
         foreach (var binding in initExpr.Bindings) {
             if (binding is not MemberAssignment ma)
                 throw new NotSupportedException("Only member assignments are supported");
+
+            if (ignoredMembers != null && ignoredMembers.Contains(ma.Member.Name)) {
+                continue;
+            }
 
             // ma.Member -> property on Target
             // ma.Expression -> expression using source (x.Firstname.ToLower())
@@ -287,6 +306,7 @@ public static class Mapper {
             .ToDictionary(p => p.Name);
 
         var existingBindings = new Dictionary<string, MemberBinding>();
+        var ignoredBindings = new HashSet<string>(StringComparer.Ordinal);
         if (partial != null) {
             // update the parameter name of the partial expression to "x"
             var partialUpdated = (MemberInitExpression)new ParameterReplaceVisitor(partial.Parameters[0], baseParam)
@@ -294,8 +314,14 @@ public static class Mapper {
 
             // copy existing bindings from the partial expression
             foreach (var partialBinding in partialUpdated.Bindings.OfType<MemberAssignment>()) {
-                MemberAssignment binding = MapPartialBinding(partialBinding, existingMapResolver);
-                existingBindings[binding.Member.Name] = binding;
+                var binding = MapPartialBinding(partialBinding, existingMapResolver, out var isIgnored);
+                if (isIgnored) {
+                    ignoredBindings.Add(partialBinding.Member.Name);
+                }
+
+                if (binding != null) {
+                    existingBindings[binding.Member.Name] = binding;
+                }
             }
         }
 
@@ -307,7 +333,7 @@ public static class Mapper {
 
         foreach (var destProp in destinationProperties) {
             // skip properties that are already bound in the partial expression
-            if (existingBindings.ContainsKey(destProp.Name))
+            if (existingBindings.ContainsKey(destProp.Name) || ignoredBindings.Contains(destProp.Name))
                 continue;
 
             var sourceProp = GetSourceProperty(sourceProperties, destProp);
@@ -325,7 +351,14 @@ public static class Mapper {
         }
 
         var body = Expression.MemberInit(Expression.New(typeof(TDestination)), allBindings);
-        return Expression.Lambda<Func<TSource, TDestination>>(body, baseParam);
+        var result = Expression.Lambda<Func<TSource, TDestination>>(body, baseParam);
+
+        if (ignoredBindings.Count > 0) {
+            _ignoredMembersByMap.Remove(result);
+            _ignoredMembersByMap.Add(result, ignoredBindings);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -334,11 +367,19 @@ public static class Mapper {
     /// </summary>
     /// <param name="partialBinding"></param>
     /// <returns></returns>
-    private static MemberAssignment MapPartialBinding(
+    private static MemberAssignment? MapPartialBinding(
         MemberAssignment partialBinding,
-        Func<Type, Type, string?, LambdaExpression?>? existingMapResolver
+        Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
+        out bool isIgnored
     ) {
+        isIgnored = false;
+
         var expr = partialBinding.Expression;
+
+        if (TryResolveIgnoreMarker(partialBinding, out var ignoredBinding)) {
+            isIgnored = true;
+            return ignoredBinding;
+        }
 
         if (TryResolveUseMapMarker(partialBinding, existingMapResolver, out var mappedBinding)) {
             return mappedBinding;
@@ -365,6 +406,37 @@ public static class Mapper {
         return binding;
     }
 
+    private static bool TryResolveIgnoreMarker(
+        MemberAssignment partialBinding,
+        out MemberAssignment? mappedBinding
+    ) {
+        mappedBinding = null;
+
+        var markerCandidate = UnwrapConvert(partialBinding.Expression);
+        if (markerCandidate is not MethodCallExpression methodCall) {
+            return false;
+        }
+
+        if (!IsIgnoreMarker(methodCall.Method)) {
+            return false;
+        }
+
+        if (methodCall.Arguments.Count != 0) {
+            throw new InvalidOperationException($"{_ignoreMarkerName} does not accept arguments. Use {_ignoreMarkerName}<T>() to ignore a destination property.");
+        }
+
+        if (partialBinding.Member is not PropertyInfo destProp) {
+            throw new InvalidOperationException($"{_ignoreMarkerName} marker can only be used for property bindings.");
+        }
+
+        if (!IsRequiredMember(destProp)) {
+            return true;
+        }
+
+        mappedBinding = Expression.Bind(destProp, CreateDefaultValueExpression(destProp.PropertyType));
+        return true;
+    }
+
     private sealed class UseMapMarkerReplaceVisitor(
         Func<Type, Type, string?, LambdaExpression?> existingMapResolver
     ) : ExpressionVisitor {
@@ -384,6 +456,10 @@ public static class Mapper {
                 }
 
                 return replacement;
+            }
+
+            if (IsIgnoreMarker(node.Method)) {
+                throw new InvalidOperationException($"{_ignoreMarkerName} can only be used as a direct destination property binding (e.g. Property = {_ignoreMarkerName}<T>()).");
             }
 
             return base.VisitMethodCall(node);
@@ -571,6 +647,23 @@ public static class Mapper {
         var parameterCount = genericDefinition.GetParameters().Length;
         return parameterCount == 1 || parameterCount == 2;
     }
+
+    private static bool IsIgnoreMarker(MethodInfo method) {
+        if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProfile)) {
+            return false;
+        }
+
+        var genericDefinition = method.GetGenericMethodDefinition();
+        if (!string.Equals(genericDefinition.Name, _ignoreMarkerName, StringComparison.Ordinal)) {
+            return false;
+        }
+
+        return genericDefinition.GetGenericArguments().Length == 1
+            && genericDefinition.GetParameters().Length == 0;
+    }
+
+    private static bool IsRequiredMember(MemberInfo member)
+        => member.CustomAttributes.Any(x => string.Equals(x.AttributeType.FullName, "System.Runtime.CompilerServices.RequiredMemberAttribute", StringComparison.Ordinal));
 
     private static bool IsProjectToMarker(MethodInfo method) {
         if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProjectToExtensions)) {

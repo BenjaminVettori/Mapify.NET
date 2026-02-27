@@ -176,24 +176,24 @@ public class MapifyInstanceTests {
 
     private class CollectionUseMapSource {
         public ElementSource[] ItemsArray { get; set; } = [];
-        public List<ElementSource> ItemsList { get; set; } = new List<ElementSource>();
+        public List<ElementSource> ItemsList { get; set; } = [];
     }
 
     private class CollectionUseMapTarget {
         public ElementTarget[] ItemsArray { get; set; } = [];
-        public List<ElementTarget> ItemsList { get; set; } = new List<ElementTarget>();
+        public List<ElementTarget> ItemsList { get; set; } = [];
         public IEnumerable<ElementTarget> ItemsEnumerable { get; set; } = [];
-        public ICollection<ElementTarget> ItemsCollection { get; set; } = new List<ElementTarget>();
-        public IList<ElementTarget> ItemsArrayAsList { get; set; } = new List<ElementTarget>();
+        public ICollection<ElementTarget> ItemsCollection { get; set; } = [];
+        public IList<ElementTarget> ItemsArrayAsList { get; set; } = [];
     }
 
     private class ImplicitPrimitiveCollectionsSource {
         public int[] Numbers { get; set; } = [];
-        public ICollection<string> Texts { get; set; } = new List<string>();
+        public ICollection<string> Texts { get; set; } = [];
     }
 
     private class ImplicitPrimitiveCollectionsTarget {
-        public List<int> Numbers { get; set; } = new List<int>();
+        public List<int> Numbers { get; set; } = [];
         public string[] Texts { get; set; } = [];
     }
 
@@ -1164,7 +1164,7 @@ public class MapifyInstanceTests {
 
         var source = new ImplicitPrimitiveCollectionsSource {
             Numbers = [1, 2, 3],
-            Texts = new List<string> { "a", "b" }
+            Texts = ["a", "b"]
         };
 
         var mapped = mapify.Map<ImplicitPrimitiveCollectionsSource, ImplicitPrimitiveCollectionsTarget>(source);

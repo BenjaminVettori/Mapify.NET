@@ -1,9 +1,18 @@
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Mapify.NET; 
+/// <summary>
+/// Represents a named mapper registration resolved from dependency injection.
+/// </summary>
 public interface INamedMapify {
+    /// <summary>
+    /// Gets the mapper name.
+    /// </summary>
     string Name { get; }
 
+    /// <summary>
+    /// Gets the mapper instance associated with <see cref="Name"/>.
+    /// </summary>
     IMapify Mapper { get; }
 }
 

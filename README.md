@@ -156,6 +156,21 @@ During build, Mapify resolves the dependency to the registered map (including nu
 
 To force a specific named map, use `UseMap<TSource, TTarget>("Name", x.SourceMember)`.
 
+To explicitly ignore a destination property in a partial map, use `Ignore<T>()`:
+
+```csharp
+CreateMap<Person, PersonDto>(x => new PersonDto {
+    Name = x.FirstName + " " + x.LastName,
+    InternalCode = Ignore<string>()
+});
+```
+
+Ignore behavior:
+
+- For **new object mapping** (`Map(source)` / projections), ignored properties are not mapped from source.
+- If an ignored destination property is marked `required`, Mapify emits `default(T)` for that property.
+- For **map-to-existing** (`Map(source, existing)`), ignored properties are left unchanged on the target instance.
+
 You can also chain LINQ operators after `UseMap`, for example:
 
 ```csharp

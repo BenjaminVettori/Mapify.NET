@@ -26,6 +26,10 @@ public class MapifyProfileErrorTests {
         public static int InvokeUseMapMarkerNamed(string name, int value) {
             return UseMap<int, int>(name, value);
         }
+
+        public static int InvokeIgnoreMarker() {
+            return Ignore<int>();
+        }
     }
 
     [Fact]
@@ -50,5 +54,10 @@ public class MapifyProfileErrorTests {
     [Fact]
     public void UseMapNamed_ShouldThrow_WhenUsedOutsideMappingExpression() {
         Assert.Throws<InvalidOperationException>(() => ProfileFacade.InvokeUseMapMarkerNamed("named", 3));
+    }
+
+    [Fact]
+    public void Ignore_ShouldThrow_WhenUsedOutsideMappingExpression() {
+        Assert.Throws<InvalidOperationException>(() => ProfileFacade.InvokeIgnoreMarker());
     }
 }

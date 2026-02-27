@@ -446,7 +446,43 @@ public class MapperTests
 
         var mapped = map.Map(new EnumerableCtorSource { Numbers = [1, 2, 3] });
 
-        Assert.Equal(new[] { 1, 2, 3 }, mapped.Numbers);
+        Assert.Equal([1, 2, 3], mapped.Numbers);
+    }
+
+    [Fact]
+    public void CreateMap_ShouldRemoveIgnoredOptionalPropertyBinding()
+    {
+        var map = CreateMapWithResolver<IgnoreSource, IgnoreTarget>(IgnoreMarkerProfile.CreateOptionalIgnorePartial(), null);
+
+        var init = Assert.IsType<MemberInitExpression>(map.Body);
+        Assert.DoesNotContain(init.Bindings, x => x.Member.Name == nameof(IgnoreTarget.Ignored));
+
+        var mapped = map.Map(new IgnoreSource { Included = 7, Ignored = 99 });
+        Assert.Equal(7, mapped.Included);
+        Assert.Equal(default, mapped.Ignored);
+    }
+
+    [Fact]
+    public void CreateMap_ShouldBindDefaultValue_WhenRequiredPropertyIsIgnored()
+    {
+        var map = CreateMapWithResolver<IgnoreSource, IgnoreRequiredTarget>(IgnoreMarkerProfile.CreateRequiredIgnorePartial(), null);
+        var mapped = map.Map(new IgnoreSource { Included = 7, Ignored = 99 });
+
+        Assert.Equal(7, mapped.Included);
+        Assert.Equal(default, mapped.Ignored);
+    }
+
+    [Fact]
+    public void CompileMapper_ShouldSkipIgnoredProperties_WhenMappingToExistingObject()
+    {
+        var map = CreateMapWithResolver<IgnoreSource, IgnoreRequiredTarget>(IgnoreMarkerProfile.CreateRequiredIgnorePartial(), null);
+        var action = Mapper.CompileMapper(map);
+
+        var target = new IgnoreRequiredTarget { Included = 1, Ignored = 123 };
+        action(new IgnoreSource { Included = 10, Ignored = 999 }, target);
+
+        Assert.Equal(10, target.Included);
+        Assert.Equal(123, target.Ignored);
     }
 
     [Fact]
@@ -462,10 +498,10 @@ public class MapperTests
     [Fact]
     public void CreateMap_InternalResolverWithInvalidParameterCount_ShouldFallbackWithoutBinding()
     {
-        Func<Type, Type, string?, LambdaExpression?> resolver = (_, _, _) =>
+        static LambdaExpression? Resolver(Type a, Type b, string? c) =>
             (Expression<Func<ResolverInnerSource, ResolverInnerSource, ResolverInnerTarget>>)((left, right) => new ResolverInnerTarget { Value = left.Value + right.Value });
 
-        var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, resolver);
+        var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, Resolver);
         var mapped = map.Map(new ResolverSource { Child = new ResolverInnerSource { Value = 3 } });
 
         Assert.Null(mapped.Child);
@@ -474,10 +510,10 @@ public class MapperTests
     [Fact]
     public void CreateMap_InternalResolverWithIncompatibleSourceParameter_ShouldFallbackWithoutBinding()
     {
-        Func<Type, Type, string?, LambdaExpression?> resolver = (_, _, _) =>
+        static LambdaExpression? Resolver(Type a, Type b, string? c) =>
             (Expression<Func<string, ResolverInnerTarget>>)(text => new ResolverInnerTarget { Value = text.Length });
 
-        var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, resolver);
+        var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, Resolver);
         var mapped = map.Map(new ResolverSource { Child = new ResolverInnerSource { Value = 5 } });
 
         Assert.Null(mapped.Child);
@@ -486,10 +522,10 @@ public class MapperTests
     [Fact]
     public void CreateMap_InternalResolverWithIncompatibleMappedResult_ShouldFallbackWithoutBinding()
     {
-        Func<Type, Type, string?, LambdaExpression?> resolver = (_, _, _) =>
+        static LambdaExpression? Resolver(Type a, Type b, string? c) =>
             (Expression<Func<ResolverInnerSource, int>>)(x => x.Value);
 
-        var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, resolver);
+        var map = CreateMapWithResolver<ResolverSource, ResolverTarget>(null, Resolver);
         var mapped = map.Map(new ResolverSource { Child = new ResolverInnerSource { Value = 6 } });
 
         Assert.Null(mapped.Child);
@@ -564,16 +600,12 @@ public class MapperTests
     public class ComplexValueContainerTarget { public ComplexValue Item { get; set; } }
 
     public class ListBindingSource { public int Value { get; set; } }
-    public class ListBindingTarget { public List<int> Items { get; } = new List<int>(); }
+    public class ListBindingTarget { public List<int> Items { get; } = []; }
 
     public class EnumerableCtorSource { public int[] Numbers { get; set; } = []; }
-    public class EnumerableCtorContainerTarget { public EnumerableCtorCollection Numbers { get; set; } = new EnumerableCtorCollection(Array.Empty<int>()); }
-    public class EnumerableCtorCollection : IEnumerable<int> {
-        private readonly int[] _values;
-
-        public EnumerableCtorCollection(IEnumerable<int> values) {
-            _values = values.ToArray();
-        }
+    public class EnumerableCtorContainerTarget { public EnumerableCtorCollection Numbers { get; set; } = new EnumerableCtorCollection([]); }
+    public class EnumerableCtorCollection(IEnumerable<int> values) : IEnumerable<int> {
+        private readonly int[] _values = [.. values];
 
         public int[] ToArray() => _values;
 
@@ -586,6 +618,27 @@ public class MapperTests
     public class ResolverInnerTarget { public int Value { get; set; } }
     public class ResolverSource { public ResolverInnerSource Child { get; set; } = new ResolverInnerSource(); }
     public class ResolverTarget { public ResolverInnerTarget? Child { get; set; } }
+
+    public class IgnoreSource { public int Included { get; set; } public int Ignored { get; set; } }
+    public class IgnoreTarget { public int Included { get; set; } public int Ignored { get; set; } }
+    public class IgnoreRequiredTarget { public int Included { get; set; } public required int Ignored { get; set; } }
+
+    private sealed class IgnoreMarkerProfile : MapifyProfile {
+        protected override void Configure() {
+        }
+
+        public static Expression<Func<IgnoreSource, IgnoreTarget>> CreateOptionalIgnorePartial()
+            => x => new IgnoreTarget {
+                Included = x.Included,
+                Ignored = Ignore<int>()
+            };
+
+        public static Expression<Func<IgnoreSource, IgnoreRequiredTarget>> CreateRequiredIgnorePartial()
+            => x => new IgnoreRequiredTarget {
+                Included = x.Included,
+                Ignored = Ignore<int>()
+            };
+    }
 
     public class PersonNameSource { public string Name { get; set; } = string.Empty; }
 
