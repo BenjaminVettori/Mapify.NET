@@ -30,6 +30,10 @@ public class MapifyProfileErrorTests {
         public static int InvokeIgnoreMarker() {
             return Ignore<int>();
         }
+
+        public static int InvokeParameterMarker(string name) {
+            return Parameter<int>(name);
+        }
     }
 
     [Fact]
@@ -59,5 +63,10 @@ public class MapifyProfileErrorTests {
     [Fact]
     public void Ignore_ShouldThrow_WhenUsedOutsideMappingExpression() {
         Assert.Throws<InvalidOperationException>(() => ProfileFacade.InvokeIgnoreMarker());
+    }
+
+    [Fact]
+    public void Parameter_ShouldThrow_WhenUsedOutsideMappingExpression() {
+        Assert.Throws<InvalidOperationException>(() => ProfileFacade.InvokeParameterMarker("offset"));
     }
 }

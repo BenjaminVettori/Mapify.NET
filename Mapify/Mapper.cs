@@ -15,6 +15,8 @@ public static class Mapper {
 
     private const string _projectToMarkerName = "ProjectTo";
 
+    private const string _parameterMarkerName = "Parameter";
+
     private static bool _globalUseDefaultMapIfTypeMapIsMissing = false;
 
     /// <summary>
@@ -99,12 +101,14 @@ public static class Mapper {
             throw new ArgumentException($"There already exists a mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}). There can only be one mapping for each combination of TSource and TTarget.");
         }
         _converters[key] = mappingExpression;
-        _compiledMapToNewCache[key] = mappingExpression.Compile();
+        if (!ContainsParameterMarkers(mappingExpression)) {
+            _compiledMapToNewCache[key] = mappingExpression.Compile();
+        }
 
         // Map-to-existing is only valid for member initializer expressions
         // (x => new TTarget { ... }). Value mappings (e.g. enum->enum, object->string)
         // are supported for Map(source) but not for Map(source, target).
-        if (mappingExpression.Body is MemberInitExpression) {
+        if (mappingExpression.Body is MemberInitExpression && !ContainsParameterMarkers(mappingExpression)) {
             _compiledMapToExistingCache[key] = CompileMapper(mappingExpression);
         }
     }
@@ -115,19 +119,30 @@ public static class Mapper {
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
     /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
-    public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
+    public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>() {
+        return GetMap<TSource, TTarget>(null);
+    }
+
+    /// <summary>
+    /// Gets the registered map expression for the source and target types and replaces runtime parameters.
+    /// Returns <c>null</c> when no map exists and default-map fallback is disabled.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
+    public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
         var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
         if (_converters.TryGetValue(key, out var existingConverter)) {
-            return (Expression<Func<TSource, TTarget>>)existingConverter;
-        } else if ((!useDefaultMapIfTypeMapIsMissing && _globalUseDefaultMapIfTypeMapIsMissing) || useDefaultMapIfTypeMapIsMissing) {
+            return ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
+        } else if (_globalUseDefaultMapIfTypeMapIsMissing) {
             if (_defaultMapCache.TryGetValue(key, out var map)) {
-                return (Expression<Func<TSource, TTarget>>)map;
+                return ApplyParameters((Expression<Func<TSource, TTarget>>)map, parameters);
             }
             var defaultMap = CreateMap<TSource, TTarget>();
             _defaultMapCache[key] = defaultMap;
-            return defaultMap;
+            return ApplyParameters(defaultMap, parameters);
         }
         return null;
     }
@@ -137,16 +152,39 @@ public static class Mapper {
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
     /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
-        var map = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+    public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>() {
+        return GetRequiredMap<TSource, TTarget>(null);
+    }
+
+    /// <summary>
+    /// Gets the required map expression for the source and target types and replaces runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>The required mapping expression.</returns>
+    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
+    public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
+        var map = GetMap<TSource, TTarget>(parameters);
         if (map != null) {
             return map;
         }
 
         throw new ArgumentException($"Missing type map configuration for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
+    }
+
+    private static bool IsParameterMarker(MethodInfo method) {
+        if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProfile)) {
+            return false;
+        }
+
+        var genericDefinition = method.GetGenericMethodDefinition();
+        return string.Equals(genericDefinition.Name, _parameterMarkerName, StringComparison.Ordinal)
+            && genericDefinition.GetGenericArguments().Length == 1
+            && genericDefinition.GetParameters().Length == 1
+            && genericDefinition.GetParameters()[0].ParameterType == typeof(string);
     }
 
     /// <summary>
@@ -175,15 +213,14 @@ public static class Mapper {
     /// </summary>
     /// <typeparam name="TSource">The type to map from</typeparam>
     /// <typeparam name="TTarget">The target type to map to</typeparam>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">If true, a default map will be used if none was added with <see cref="AddMap{TSource, TTarget}(Expression{Func{TSource, TTarget}})"> beforehand.</param>
     /// <returns>A new object of type <see cref="TTarget"/> with the mapped values</returns>
-    public static void Map<TSource, TTarget>(TSource source, TTarget target, bool useDefaultMapIfTypeMapIsMissing = false) {
+    public static void Map<TSource, TTarget>(TSource source, TTarget target) {
         var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
         if (_compiledMapToExistingCache.TryGetValue(key, out var map)) {
             ((Action<TSource, TTarget>)map).Invoke(source, target);
             return;
         }
-        var expression = GetRequiredMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+        var expression = GetRequiredMap<TSource, TTarget>();
 
         if (expression.Body is not MemberInitExpression) {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
@@ -221,15 +258,14 @@ public static class Mapper {
     /// <typeparam name="TSource">The type to map from</typeparam>
     /// <typeparam name="TTarget">The target type to map to</typeparam>
     /// <param name="source"></param>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">If true, a default map will be used if none was added with <see cref="AddMap{TSource, TTarget}(Expression{Func{TSource, TTarget}})"> beforehand.</param>
     /// <returns>A new object of type <see cref="TTarget"/> with the mapped values</returns>
-    public static TTarget Map<TSource, TTarget>(TSource source, bool useDefaultMapIfTypeMapIsMissing = false) {
+    public static TTarget Map<TSource, TTarget>(TSource source) {
         var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
         if (_compiledMapToNewCache.TryGetValue(key, out var map)) {
             return ((Func<TSource, TTarget>)map).Invoke(source);
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+        var expression = GetRequiredMap<TSource, TTarget>();
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);
@@ -1149,5 +1185,41 @@ public static class Mapper {
 
         var key = new Tuple<Type, Type>(sourceType, destinationType);
         return _converters.TryGetValue(key, out var existingConverter) ? existingConverter : null;
+    }
+
+    internal static Expression<Func<TSource, TTarget>> ApplyParameters<TSource, TTarget>(
+        Expression<Func<TSource, TTarget>> mappingExpression,
+        IReadOnlyDictionary<string, object?>? parameters
+    ) {
+        return (Expression<Func<TSource, TTarget>>)ApplyParameters((LambdaExpression)mappingExpression, parameters);
+    }
+
+    internal static LambdaExpression ApplyParameters(LambdaExpression mappingExpression, IReadOnlyDictionary<string, object?>? parameters) {
+        var replacedBody = new ParameterMarkerReplaceVisitor(parameters).Visit(mappingExpression.Body)!;
+        return replacedBody == mappingExpression.Body
+            ? mappingExpression
+            : Expression.Lambda(replacedBody, mappingExpression.Parameters);
+    }
+
+    internal static bool ContainsParameterMarkers(LambdaExpression expression)
+        => new ParameterMarkerDetector().ContainsMarker(expression);
+
+    private sealed class ParameterMarkerDetector : ExpressionVisitor {
+        private bool _containsMarker;
+
+        public bool ContainsMarker(LambdaExpression expression) {
+            _containsMarker = false;
+            Visit(expression);
+            return _containsMarker;
+        }
+
+        protected override Expression VisitMethodCall(MethodCallExpression node) {
+            if (IsParameterMarker(node.Method)) {
+                _containsMarker = true;
+                return node;
+            }
+
+            return base.VisitMethodCall(node);
+        }
     }
 }

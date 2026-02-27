@@ -63,7 +63,8 @@ public class MapperTests
         
         // Act
         // Use implicit creation
-        var target = Mapper.Map<Source, Target>(source, useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        var target = Mapper.Map<Source, Target>(source);
 
         // Assert
         Assert.Equal(source.Id, target.Id);
@@ -118,7 +119,8 @@ public class MapperTests
 
         // Act
         // Pass true to override global false
-        var target = Mapper.Map<A2, B2>(source, useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        var target = Mapper.Map<A2, B2>(source);
 
         // Assert
         Assert.Equal(5, target.Prop);
@@ -146,7 +148,8 @@ public class MapperTests
         var target = new Target { Id = 1, Name = "Original" };
 
         // Act
-        Mapper.Map(source, target, useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        Mapper.Map(source, target);
 
         // Assert
         Assert.Equal(10, target.Id);
@@ -176,7 +179,8 @@ public class MapperTests
         var source = new SourceNullable { Value = 10 };
         
         // Act
-        var target = Mapper.Map<SourceNullable, TargetNonNullable>(source, useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        var target = Mapper.Map<SourceNullable, TargetNonNullable>(source);
 
         // Assert
         Assert.Equal(10, target.Value);
@@ -189,7 +193,8 @@ public class MapperTests
         var source = new SourceNullable { Value = null };
         
         // Act
-        var target = Mapper.Map<SourceNullable, TargetNonNullable>(source, useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        var target = Mapper.Map<SourceNullable, TargetNonNullable>(source);
 
         // Assert
         Assert.Equal(0, target.Value); // Default for int
@@ -202,7 +207,8 @@ public class MapperTests
         var source = new TargetNonNullable { Value = 10 };
 
         // Act
-        var target = Mapper.Map<TargetNonNullable, TargetNullable>(source, useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        var target = Mapper.Map<TargetNonNullable, TargetNullable>(source);
 
         // Assert
         Assert.Equal(10, target.Value);
@@ -235,7 +241,8 @@ public class MapperTests
         // Ensure we can get a map (defaults allowed)
         
         // Act
-        var expr = Mapper.GetMap<A2, B2>(useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        var expr = Mapper.GetMap<A2, B2>();
         Assert.NotNull(expr);
         var func = expr!.Compile();
         var target = func(source);
@@ -247,8 +254,9 @@ public class MapperTests
     [Fact]
     public void GetMap_ShouldReturnCachedDefaultExpression_OnSecondCall()
     {
-        var expr1 = Mapper.GetMap<A2, B2>(useDefaultMapIfTypeMapIsMissing: true);
-        var expr2 = Mapper.GetMap<A2, B2>(useDefaultMapIfTypeMapIsMissing: true);
+        Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+        var expr1 = Mapper.GetMap<A2, B2>();
+        var expr2 = Mapper.GetMap<A2, B2>();
 
         Assert.NotNull(expr1);
         Assert.Same(expr1, expr2);
@@ -275,6 +283,43 @@ public class MapperTests
 
         // Act / Assert
         Assert.Throws<ArgumentException>(() => Mapper.GetRequiredMap<A4, B4>());
+    }
+
+    [Fact]
+    public void GetRequiredMap_WithParameters_ShouldResolveParameterMarkerFromStaticMap()
+    {
+        Mapper.AddMap(ParameterMarkerProfile.CreateParameterizedMap());
+
+        var map = Mapper.GetRequiredMap<A2, B2>(new Dictionary<string, object?> { ["offset"] = 7 });
+        var mapped = map.Compile().Invoke(new A2 { Prop = 2 });
+
+        Assert.Equal(9, mapped.Prop);
+    }
+
+    [Fact]
+    public void GetRequiredMap_WithParameters_ShouldThrow_WhenParameterMarkerValueIsMissing()
+    {
+        Mapper.AddMap(ParameterMarkerProfile.CreateParameterizedMap());
+
+        var ex = Assert.Throws<KeyNotFoundException>(() => Mapper.GetRequiredMap<A2, B2>());
+        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProjectTo_IQueryable_WithParameters_ShouldResolveParameterMarkerFromStaticMap()
+    {
+        Mapper.AddMap(ParameterMarkerProfile.CreateParameterizedMap());
+
+        var projected = new[] {
+                new A2 { Prop = 1 },
+                new A2 { Prop = 2 }
+            }
+            .AsQueryable()
+            .ProjectTo<B2>(new Dictionary<string, object?> { ["offset"] = 3 })
+            .Select(x => x.Prop)
+            .ToArray();
+
+        Assert.Equal([4, 5], projected);
     }
 
     [Fact]
@@ -463,6 +508,29 @@ public class MapperTests
     }
 
     [Fact]
+    public void CreateAndAddMap_WithIgnoreMarker_ShouldIgnorePropertyInStaticMapper()
+    {
+        Mapper.CreateAndAddMap<IgnoreSource, IgnoreTarget>(IgnoreMarkerProfile.CreateOptionalIgnorePartial());
+
+        var mapped = Mapper.Map<IgnoreSource, IgnoreTarget>(new IgnoreSource { Included = 7, Ignored = 99 });
+
+        Assert.Equal(7, mapped.Included);
+        Assert.Equal(default, mapped.Ignored);
+    }
+
+    [Fact]
+    public void CreateAndAddMap_WithIgnoreMarker_ShouldSkipIgnoredPropertyWhenMappingToExistingInStaticMapper()
+    {
+        Mapper.CreateAndAddMap<IgnoreSource, IgnoreTarget>(IgnoreMarkerProfile.CreateOptionalIgnorePartial());
+
+        var target = new IgnoreTarget { Included = 1, Ignored = 123 };
+        Mapper.Map(new IgnoreSource { Included = 10, Ignored = 999 }, target);
+
+        Assert.Equal(10, target.Included);
+        Assert.Equal(123, target.Ignored);
+    }
+
+    [Fact]
     public void CreateMap_ShouldBindDefaultValue_WhenRequiredPropertyIsIgnored()
     {
         var map = CreateMapWithResolver<IgnoreSource, IgnoreRequiredTarget>(IgnoreMarkerProfile.CreateRequiredIgnorePartial(), null);
@@ -641,6 +709,16 @@ public class MapperTests
     }
 
     public class PersonNameSource { public string Name { get; set; } = string.Empty; }
+
+    private sealed class ParameterMarkerProfile : MapifyProfile {
+        protected override void Configure() {
+        }
+
+        public static Expression<Func<A2, B2>> CreateParameterizedMap()
+            => x => new B2 {
+                Prop = x.Prop + Parameter<int>("offset")
+            };
+    }
 
     public enum SourceStatus { Inactive = 0, Active = 1 }
     public enum TargetStatus { Disabled = 0, Enabled = 1 }

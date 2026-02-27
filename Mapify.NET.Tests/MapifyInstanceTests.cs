@@ -327,6 +327,14 @@ public class MapifyInstanceTests {
         public ProjectToNamedPhoneTarget[] Phones { get; set; } = [];
     }
 
+    private class ParameterizedSource {
+        public int Value { get; set; }
+    }
+
+    private class ParameterizedTarget {
+        public int Value { get; set; }
+    }
+
     private enum FaultProfileMode {
         None,
         WhitespaceName,
@@ -752,12 +760,21 @@ public class MapifyInstanceTests {
         }
     }
 
+    private class ParameterizedProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ParameterizedSource, ParameterizedTarget>(x => new ParameterizedTarget {
+                Value = x.Value + Parameter<int>("offset")
+            });
+        }
+    }
+
     [Fact]
     public void Map_ToNewObject_ShouldWorkLikeStaticMapper() {
         var mapify = new Mapify();
+        mapify.UseDefaultMapIfTypeMapIsMissing(true);
         var source = new Source { Id = 10, Name = "Alice" };
 
-        var target = mapify.Map<Source, Target>(source, useDefaultMapIfTypeMapIsMissing: true);
+        var target = mapify.Map<Source, Target>(source);
 
         Assert.Equal(source.Id, target.Id);
         Assert.Equal(source.Name, target.Name);
@@ -766,10 +783,11 @@ public class MapifyInstanceTests {
     [Fact]
     public void Map_ToExistingObject_ShouldWorkLikeStaticMapper() {
         var mapify = new Mapify();
+        mapify.UseDefaultMapIfTypeMapIsMissing(true);
         var source = new Source { Id = 22, Name = "Bob" };
         var target = new Target { Id = 1, Name = "Initial" };
 
-        mapify.Map(source, target, useDefaultMapIfTypeMapIsMissing: true);
+        mapify.Map(source, target);
 
         Assert.Equal(22, target.Id);
         Assert.Equal("Bob", target.Name);
@@ -802,8 +820,9 @@ public class MapifyInstanceTests {
     [Fact]
     public void Constructor_ShouldAllowNullProfileSequence() {
         var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+        mapify.UseDefaultMapIfTypeMapIsMissing(true);
 
-        var mapped = mapify.Map<SourceA, TargetA>(new SourceA { ValueA = 9 }, useDefaultMapIfTypeMapIsMissing: true);
+        var mapped = mapify.Map<SourceA, TargetA>(new SourceA { ValueA = 9 });
 
         Assert.Equal(9, mapped.ValueA);
     }
@@ -918,10 +937,11 @@ public class MapifyInstanceTests {
     [Fact]
     public void Map_ToExisting_DefaultMap_ShouldWorkAcrossRepeatedCalls() {
         var mapify = new Mapify();
+        mapify.UseDefaultMapIfTypeMapIsMissing(true);
         var target = new TargetA();
 
-        mapify.Map(new SourceA { ValueA = 2 }, target, useDefaultMapIfTypeMapIsMissing: true);
-        mapify.Map(new SourceA { ValueA = 5 }, target, useDefaultMapIfTypeMapIsMissing: true);
+        mapify.Map(new SourceA { ValueA = 2 }, target);
+        mapify.Map(new SourceA { ValueA = 5 }, target);
 
         Assert.Equal(5, target.ValueA);
     }
@@ -1251,6 +1271,26 @@ public class MapifyInstanceTests {
     }
 
     [Fact]
+    public void GetRequiredMap_Default_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var map = mapify.GetRequiredMap<ParameterizedSource, ParameterizedTarget>(
+            new Dictionary<string, object?> { ["offset"] = 5 }
+        );
+
+        var mapped = map.Compile().Invoke(new ParameterizedSource { Value = 3 });
+        Assert.Equal(8, mapped.Value);
+    }
+
+    [Fact]
+    public void GetRequiredMap_Default_ShouldThrow_WhenParameterIsMissing() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var ex = Assert.Throws<KeyNotFoundException>(() => mapify.GetRequiredMap<ParameterizedSource, ParameterizedTarget>());
+        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GetMap_Named_ShouldReturnNull_WhenNamedMappingIsMissing() {
         var mapify = new Mapify(new NamedPersonValueMapsProfile());
 
@@ -1452,6 +1492,22 @@ public class MapifyInstanceTests {
             .Single();
 
         Assert.Equal(["+1-100 [MASKED]"], projected.Phones.Select(x => x.Number).ToArray());
+    }
+
+    [Fact]
+    public void ProjectTo_IQueryable_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var projected = new[] {
+                new ParameterizedSource { Value = 1 },
+                new ParameterizedSource { Value = 2 }
+            }
+            .AsQueryable()
+            .ProjectTo<ParameterizedTarget>(mapify, new Dictionary<string, object?> { ["offset"] = 10 })
+            .Select(x => x.Value)
+            .ToArray();
+
+        Assert.Equal([11, 12], projected);
     }
 
     [Fact]

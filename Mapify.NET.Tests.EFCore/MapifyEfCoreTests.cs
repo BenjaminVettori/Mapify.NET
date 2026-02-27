@@ -587,6 +587,86 @@ public class MapifyEfCoreTests {
     }
 
     [Fact]
+    public void InstanceMapify_GetRequiredMapWithParameters_ShouldWorkInEfCoreProjection_WhenUsingSelect() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+
+        db.People.AddRange(
+            new EfCorePerson {
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                HomeAddress = new EfCoreAddress { City = "London" }
+            },
+            new EfCorePerson {
+                FirstName = "Alan",
+                LastName = "Turing",
+                HomeAddress = new EfCoreAddress { City = "Manchester" }
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCorePersonRuntimeParameterProfile()
+        ]);
+
+        var mapExpr = mapify.GetRequiredMap<EfCorePerson, EfCorePersonRuntimeParameterDto>(
+            new Dictionary<string, object?> { ["offset"] = 100 }
+        );
+
+        var result = db.People
+            .OrderBy(x => x.Id)
+            .Select(mapExpr)
+            .ToList();
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(new[] { 101, 102 }, result.Select(x => x.AdjustedId).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectToWithParameters_ShouldWorkInEfCoreProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+
+        db.People.AddRange(
+            new EfCorePerson {
+                FirstName = "Grace",
+                LastName = "Hopper",
+                HomeAddress = new EfCoreAddress { City = "New York" }
+            },
+            new EfCorePerson {
+                FirstName = "Katherine",
+                LastName = "Johnson",
+                HomeAddress = new EfCoreAddress { City = "White Sulphur Springs" }
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCorePersonRuntimeParameterProfile()
+        ]);
+
+        var result = db.People
+            .OrderBy(x => x.Id)
+            .ProjectTo<EfCorePersonRuntimeParameterDto>(mapify, new Dictionary<string, object?> { ["offset"] = 50 })
+            .ToList();
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(new[] { 51, 52 }, result.Select(x => x.AdjustedId).ToArray());
+    }
+
+    [Fact]
     public void InstanceMapify_NestedNamedProjectToMarker_ShouldWorkInEfCoreProjection() {
         var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -717,6 +797,10 @@ public class MapifyEfCoreTests {
         public string? IgnoredFromDb { get; set; }
     }
 
+    private sealed class EfCorePersonRuntimeParameterDto {
+        public int AdjustedId { get; set; }
+    }
+
     private sealed class EfCorePhoneProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCorePhone, EfCorePhoneDto>();
@@ -836,6 +920,14 @@ public class MapifyEfCoreTests {
         protected override void Configure() {
             CreateMap<EfCoreProjectionIgnoreEntity, EfCoreProjectionIgnoreDto>(x => new EfCoreProjectionIgnoreDto {
                 IgnoredFromDb = Ignore<string?>()
+            });
+        }
+    }
+
+    private sealed class EfCorePersonRuntimeParameterProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCorePersonRuntimeParameterDto>(x => new EfCorePersonRuntimeParameterDto {
+                AdjustedId = x.Id + Parameter<int>("offset")
             });
         }
     }

@@ -484,7 +484,7 @@ Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
     *   **Extension Method (`.Map()`)**: Caches the compiled delegate for that specific expression instance.
     *   **Static `Mapper.Map`**: Uses a global cache.
         *   **Priority**: Explicitly added maps (`AddMap`) take precedence over implicitly generated ones.
-        *   **Auto-Cache**: If you use `Mapper.Map` with `useDefaultMapIfTypeMapIsMissing: true` *before* adding a custom map, a default map is generated and cached. However, calling `AddMap` later **will overwrite** this cache with your custom definition, so you can safely upgrade from default to custom maps at runtime.
+        *   **Auto-Cache**: If global fallback is enabled via `Mapper.UseDefaultMapIfTypeMapIsMissing(true)` before adding a custom map, a default map is generated and cached. Calling `AddMap` later **overwrites** this cache entry with your custom definition.
 
 ## Advanced Usage 🛠️
 
@@ -519,8 +519,11 @@ If you want throwing behavior, use `GetRequiredMap`.
 // Retrieve a registered map (or null)
 var mapExpr = Mapper.GetMap<Person, PersonDto>();
 
-// Or retrieve with fallback to default map generation
-var fallbackMapExpr = Mapper.GetMap<Person, PersonDto>(useDefaultMapIfTypeMapIsMissing: true);
+// Enable global fallback once (if desired)
+Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+
+// Then GetMap/GetRequiredMap can use generated default maps when missing
+var fallbackMapExpr = Mapper.GetMap<Person, PersonDto>();
 
 // Throw if the map is missing
 var requiredMapExpr = Mapper.GetRequiredMap<Person, PersonDto>();

@@ -187,9 +187,11 @@ public class Mapify : IMapify, IMapifyConfigurator {
         }
 
         _converters[key] = mappingExpression;
-        _compiledMapToNewCache[key] = mappingExpression.Compile();
+        if (!Mapper.ContainsParameterMarkers(mappingExpression)) {
+            _compiledMapToNewCache[key] = mappingExpression.Compile();
+        }
 
-        if (mappingExpression.Body is MemberInitExpression) {
+        if (mappingExpression.Body is MemberInitExpression && !Mapper.ContainsParameterMarkers(mappingExpression)) {
             _compiledMapToExistingCache[key] = Mapper.CompileMapper(mappingExpression);
         }
     }
@@ -204,13 +206,27 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The mapping expression, or <c>null</c> if not found.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
     public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name) {
+        return GetMap<TSource, TTarget>(name, null);
+    }
+
+    /// <summary>
+    /// Gets the named map expression for the source and target types and replaces runtime parameters.
+    /// Returns <c>null</c> when the named map is missing.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>The mapping expression, or <c>null</c> if not found.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters) {
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
         if (_converters.TryGetValue(key, out var existingConverter)) {
-            return (Expression<Func<TSource, TTarget>>)existingConverter;
+            return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
         }
 
         return null;
@@ -225,7 +241,20 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The required named mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
     public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name) {
-        var map = GetMap<TSource, TTarget>(name);
+        return GetRequiredMap<TSource, TTarget>(name, null);
+    }
+
+    /// <summary>
+    /// Gets the named map expression for the source and target types, replaces runtime parameters, and throws if it is missing.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>The required named mapping expression.</returns>
+    /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters) {
+        var map = GetMap<TSource, TTarget>(name, parameters);
         if (map != null) {
             return map;
         }
@@ -239,23 +268,34 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
     /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
-    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>() {
+        return GetMap<TSource, TTarget>((IReadOnlyDictionary<string, object?>?)null);
+    }
+
+    /// <summary>
+    /// Gets the default map expression for the source and target types and replaces runtime parameters.
+    /// Returns <c>null</c> when no map exists and default-map fallback is disabled.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_converters.TryGetValue(key, out var existingConverter)) {
-            return (Expression<Func<TSource, TTarget>>)existingConverter;
+            return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
         }
 
-        if ((!useDefaultMapIfTypeMapIsMissing && _useDefaultMapIfTypeMapIsMissing) || useDefaultMapIfTypeMapIsMissing) {
+        if (_useDefaultMapIfTypeMapIsMissing) {
             var defaultCacheKey = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (_defaultMapCache.TryGetValue(defaultCacheKey, out var existingDefaultMap)) {
-                return (Expression<Func<TSource, TTarget>>)existingDefaultMap;
+                return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
             }
 
             var defaultMap = Mapper.CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
             _defaultMapCache[defaultCacheKey] = defaultMap;
-            return defaultMap;
+            return Mapper.ApplyParameters(defaultMap, parameters);
         }
 
         return null;
@@ -266,11 +306,22 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
     /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(bool useDefaultMapIfTypeMapIsMissing = false) {
-        var map = GetMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>() {
+        return GetRequiredMap<TSource, TTarget>((IReadOnlyDictionary<string, object?>?)null);
+    }
+
+    /// <summary>
+    /// Gets the default map expression for the source and target types, replaces runtime parameters, and throws if none is available.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>The required mapping expression.</returns>
+    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
+        var map = GetMap<TSource, TTarget>(parameters);
         if (map != null) {
             return map;
         }
@@ -317,17 +368,16 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <param name="source">The source object.</param>
     /// <param name="target">The target object to update.</param>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
     /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
-    public void Map<TSource, TTarget>(TSource source, TTarget target, bool useDefaultMapIfTypeMapIsMissing = false) {
+    public void Map<TSource, TTarget>(TSource source, TTarget target) {
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_compiledMapToExistingCache.TryGetValue(key, out var map)) {
             ((Action<TSource, TTarget>)map).Invoke(source, target);
             return;
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+        var expression = GetRequiredMap<TSource, TTarget>();
 
         if (expression.Body is not MemberInitExpression) {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
@@ -369,16 +419,15 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <typeparam name="TSource">The source type.</typeparam>
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <param name="source">The source object.</param>
-    /// <param name="useDefaultMapIfTypeMapIsMissing">Whether to allow automatic default-map creation for this call.</param>
     /// <returns>A new mapped target object.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public TTarget Map<TSource, TTarget>(TSource source, bool useDefaultMapIfTypeMapIsMissing = false) {
+    public TTarget Map<TSource, TTarget>(TSource source) {
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_compiledMapToNewCache.TryGetValue(key, out var map)) {
             return ((Func<TSource, TTarget>)map).Invoke(source);
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>(useDefaultMapIfTypeMapIsMissing);
+        var expression = GetRequiredMap<TSource, TTarget>();
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);

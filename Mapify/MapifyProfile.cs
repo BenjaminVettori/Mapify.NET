@@ -112,4 +112,14 @@ public abstract class MapifyProfile {
     protected static T Ignore<T>() {
         throw new InvalidOperationException($"{nameof(Ignore)} can only be used as a marker inside a mapping expression during profile configuration.");
     }
+
+    /// <summary>
+    /// Marker used inside mapping expressions to inject a runtime parameter value.
+    /// </summary>
+    /// <typeparam name="T">The expected parameter type.</typeparam>
+    /// <param name="parameterName">The parameter name.</param>
+    /// <returns>Never returns; this method is only a marker in expression trees.</returns>
+    protected static T Parameter<T>(string parameterName) {
+        throw new InvalidOperationException($"{nameof(Parameter)} can only be used as a marker inside a mapping expression during profile configuration.");
+    }
 }
