@@ -363,6 +363,74 @@ When `CreateMap<TSource, TTarget>()` is called, Mapify automatically generates b
     If a map already exists for a same-name property type pair (e.g. `Address -> AddressDto`),
     Mapify uses that map implicitly before falling back to direct assignment.
 
+### Mapping Type Resolution Precedence
+
+When Mapify tries to resolve a nested map (implicit same-name property mapping or `UseMap`), it follows this precedence:
+
+1. **Exact source/target type match**
+2. **Nullable underlying-type fallback**
+3. **Assignable collection-pair fallback** (e.g. `IEnumerable<T>` map reused for `List<T>` members)
+4. **Collection element-type fallback** (only when both sides are collection shapes)
+
+#### 1) Exact map wins
+
+If both are registered, exact type map is preferred.
+
+```csharp
+CreateMap<NumberSource, NumberDto>(x => new NumberDto { Value = x.Value + 1 });
+CreateMap<NumberSource?, NumberDto?>(x => x == null ? null : new NumberDto { Value = x.Value.Value + 100 });
+
+CreateMap<Order, OrderDto>(); // Order.Number: NumberSource? -> OrderDto.Number: NumberDto?
+```
+
+`Order.Number` uses `NumberSource? -> NumberDto?` (exact), not the non-nullable fallback map.
+
+#### 2) Nullable fallback when exact nullable map is missing
+
+If only `NumberSource -> NumberDto` exists, Mapify can lift/adapt it for nullable variants where compatible.
+
+```csharp
+CreateMap<NumberSource, NumberDto>(x => new NumberDto { Value = x.Value + 1 });
+CreateMap<Order, OrderDto>(); // NumberSource? -> NumberDto?
+```
+
+Mapify uses the non-nullable map and injects null-safe adaptation.
+
+#### 3) Collection map precedence
+
+For collection properties, Mapify resolves in this order:
+
+1. exact collection-pair map
+2. assignable collection-pair map (for example `IEnumerable<TSrc> -> IEnumerable<TDest>`)
+3. element map fallback
+
+```csharp
+CreateMap<Item, ItemDto>(x => new ItemDto { Value = x.Value + 1 });
+CreateMap<List<Item>, List<ItemDto>>(x => x.Select(i => new ItemDto { Value = i.Value + 100 }).ToList());
+
+CreateMap<Batch, BatchDto>(); // List<Item> -> List<ItemDto>
+```
+
+`Batch.Items` uses `List<Item> -> List<ItemDto>` (exact collection map).
+If that map is removed but an `IEnumerable<Item> -> IEnumerable<ItemDto>` map exists, that map is used and materialized to the destination collection type.
+If neither collection map exists, Mapify falls back to `Item -> ItemDto` per element.
+
+For nullable collection members, Mapify now preserves `null` safely (it does not invoke `Select` on a `null` source).
+
+If a custom collection type implements multiple different `IEnumerable<T>` element types, Mapify throws a descriptive configuration error because element type inference would be ambiguous.
+
+### `GetMap` / `GetRequiredMap` exact-type rule
+
+`GetMap<TSource, TTarget>()` and `GetRequiredMap<TSource, TTarget>()` always resolve by the **exact requested pair**.
+They do **not** return a different pair's map (for example, element maps or nullable underlying-type maps).
+
+Examples:
+
+- If only `Item -> ItemDto` is registered, `GetMap<List<Item>, List<ItemDto>>()` is `null` (unless default-map fallback is enabled, in which case Mapify creates a new exact `List<Item> -> List<ItemDto>` expression).
+- If only `NumberSource -> NumberDto` is registered, `GetMap<NumberSource?, NumberDto?>()` is `null` (same default fallback behavior applies).
+
+This keeps `GetMap`/`GetRequiredMap` type-safe: the returned expression always matches the exact generic types requested.
+
 ### Named Mappings
 
 Named mappings let you register multiple mappings for the same source/target type pair.

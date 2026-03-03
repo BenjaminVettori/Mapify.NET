@@ -466,6 +466,133 @@ public class MapperTests
     }
 
     [Fact]
+    public void CreateMap_ShouldPreferExactNullableMap_OverUnderlyingTypeFallback()
+    {
+        Mapper.AddMap<PrecedenceNumberSource, PrecedenceNumberTarget>(x => new PrecedenceNumberTarget { Value = x.Value + 1 });
+        Mapper.AddMap<PrecedenceNumberSource?, PrecedenceNumberTarget?>(
+            x => x == null
+                ? (PrecedenceNumberTarget?)null
+                : new PrecedenceNumberTarget { Value = x.Value.Value + 100 }
+        );
+
+        var map = Mapper.CreateMap<PrecedenceNullableContainerSource, PrecedenceNullableContainerTarget>();
+        var mapped = map.Map(new PrecedenceNullableContainerSource {
+            Item = new PrecedenceNumberSource { Value = 5 }
+        });
+
+        Assert.NotNull(mapped.Item);
+        Assert.Equal(105, mapped.Item!.Value.Value);
+    }
+
+    [Fact]
+    public void CreateMap_ShouldFallbackToUnderlyingNullableTypeMap_WhenExactNullableMapIsMissing()
+    {
+        Mapper.AddMap<PrecedenceNumberSource, PrecedenceNumberTarget>(x => new PrecedenceNumberTarget { Value = x.Value + 1 });
+
+        var map = Mapper.CreateMap<PrecedenceNullableContainerSource, PrecedenceNullableContainerTarget>();
+        var mapped = map.Map(new PrecedenceNullableContainerSource {
+            Item = new PrecedenceNumberSource { Value = 5 }
+        });
+
+        Assert.NotNull(mapped.Item);
+        Assert.Equal(6, mapped.Item!.Value.Value);
+    }
+
+    [Fact]
+    public void CreateMap_ShouldPreferExactCollectionMap_OverElementFallback()
+    {
+        Mapper.AddMap<PrecedenceCollectionElementSource, PrecedenceCollectionElementTarget>(
+            x => new PrecedenceCollectionElementTarget { Value = x.Value + 1 }
+        );
+        Mapper.AddMap<List<PrecedenceCollectionElementSource>, List<PrecedenceCollectionElementTarget>>(
+            x => x.Select(i => new PrecedenceCollectionElementTarget { Value = i.Value + 100 }).ToList()
+        );
+
+        var map = Mapper.CreateMap<PrecedenceCollectionContainerSource, PrecedenceCollectionContainerTarget>();
+        var mapped = map.Map(new PrecedenceCollectionContainerSource {
+            Items = [new PrecedenceCollectionElementSource { Value = 1 }]
+        });
+
+        Assert.Equal([101], mapped.Items.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void CreateMap_ShouldFallbackToElementMap_WhenExactCollectionMapIsMissing()
+    {
+        Mapper.AddMap<PrecedenceCollectionElementSource, PrecedenceCollectionElementTarget>(
+            x => new PrecedenceCollectionElementTarget { Value = x.Value + 1 }
+        );
+
+        var map = Mapper.CreateMap<PrecedenceCollectionContainerSource, PrecedenceCollectionContainerTarget>();
+        var mapped = map.Map(new PrecedenceCollectionContainerSource {
+            Items = [new PrecedenceCollectionElementSource { Value = 1 }]
+        });
+
+        Assert.Equal([2], mapped.Items.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void GetMap_ShouldRequireExactTypes_AndNotReturnNullableOrElementFallbackMaps()
+    {
+        Mapper.UseDefaultMapIfTypeMapIsMissing(false);
+        Mapper.AddMap<PrecedenceNumberSource, PrecedenceNumberTarget>(x => new PrecedenceNumberTarget { Value = x.Value + 1 });
+        Mapper.AddMap<PrecedenceCollectionElementSource, PrecedenceCollectionElementTarget>(
+            x => new PrecedenceCollectionElementTarget { Value = x.Value + 1 }
+        );
+
+        var nullableMap = Mapper.GetMap<PrecedenceNumberSource?, PrecedenceNumberTarget?>();
+        var collectionMap = Mapper.GetMap<List<PrecedenceCollectionElementSource>, List<PrecedenceCollectionElementTarget>>();
+
+        Assert.Null(nullableMap);
+        Assert.Null(collectionMap);
+        Assert.Throws<ArgumentException>(() => Mapper.GetRequiredMap<PrecedenceNumberSource?, PrecedenceNumberTarget?>());
+        Assert.Throws<ArgumentException>(() => Mapper.GetRequiredMap<List<PrecedenceCollectionElementSource>, List<PrecedenceCollectionElementTarget>>());
+    }
+
+    [Fact]
+    public void CreateMap_ShouldUseAssignableCollectionMap_BeforeElementFallback()
+    {
+        Mapper.AddMap<PrecedenceCollectionElementSource, PrecedenceCollectionElementTarget>(
+            x => new PrecedenceCollectionElementTarget { Value = x.Value + 1 }
+        );
+        Mapper.AddMap<IEnumerable<PrecedenceCollectionElementSource>, IEnumerable<PrecedenceCollectionElementTarget>>(
+            x => x.Select(i => new PrecedenceCollectionElementTarget { Value = i.Value + 10 })
+        );
+
+        var map = Mapper.CreateMap<PrecedenceCollectionContainerSource, PrecedenceCollectionContainerTarget>();
+        var mapped = map.Map(new PrecedenceCollectionContainerSource {
+            Items = [new PrecedenceCollectionElementSource { Value = 1 }]
+        });
+
+        Assert.Equal([11], mapped.Items.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void CreateMap_ShouldHandleNullCollectionSource_WithoutThrowing()
+    {
+        Mapper.AddMap<PrecedenceCollectionElementSource, PrecedenceCollectionElementTarget>(
+            x => new PrecedenceCollectionElementTarget { Value = x.Value + 1 }
+        );
+
+        var map = Mapper.CreateMap<NullableCollectionContainerSource, NullableCollectionContainerTarget>();
+        var mapped = map.Map(new NullableCollectionContainerSource {
+            Items = null
+        });
+
+        Assert.Null(mapped.Items);
+    }
+
+    [Fact]
+    public void CreateMap_ShouldThrowForAmbiguousEnumerableElementType()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            Mapper.CreateMap<AmbiguousEnumerableContainerSource, AmbiguousEnumerableContainerTarget>()
+        );
+
+        Assert.Contains("multiple IEnumerable<T> element types", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreateMap_NullableComplexStructToNonNullableSameType_ShouldUseExistingMapWhenPresent()
     {
         // Arrange
@@ -666,6 +793,30 @@ public class MapperTests
     public struct ComplexValue { public int Value { get; set; } }
     public class ComplexValueContainerSource { public ComplexValue? Item { get; set; } }
     public class ComplexValueContainerTarget { public ComplexValue Item { get; set; } }
+
+    public struct PrecedenceNumberSource { public int Value { get; set; } }
+    public struct PrecedenceNumberTarget { public int Value { get; set; } }
+    public class PrecedenceNullableContainerSource { public PrecedenceNumberSource? Item { get; set; } }
+    public class PrecedenceNullableContainerTarget { public PrecedenceNumberTarget? Item { get; set; } }
+
+    public class PrecedenceCollectionElementSource { public int Value { get; set; } }
+    public class PrecedenceCollectionElementTarget { public int Value { get; set; } }
+    public class PrecedenceCollectionContainerSource { public List<PrecedenceCollectionElementSource> Items { get; set; } = []; }
+    public class PrecedenceCollectionContainerTarget { public List<PrecedenceCollectionElementTarget> Items { get; set; } = []; }
+    public class NullableCollectionContainerSource { public List<PrecedenceCollectionElementSource>? Items { get; set; } }
+    public class NullableCollectionContainerTarget { public List<PrecedenceCollectionElementTarget>? Items { get; set; } }
+
+    public class AmbiguousEnumerable : IEnumerable<int>, IEnumerable<string> {
+        IEnumerator<int> IEnumerable<int>.GetEnumerator() => Array.Empty<int>().AsEnumerable().GetEnumerator();
+
+        IEnumerator<string> IEnumerable<string>.GetEnumerator() => Array.Empty<string>().AsEnumerable().GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+            => ((IEnumerable<int>)this).GetEnumerator();
+    }
+
+    public class AmbiguousEnumerableContainerSource { public AmbiguousEnumerable Items { get; set; } = new AmbiguousEnumerable(); }
+    public class AmbiguousEnumerableContainerTarget { public List<int> Items { get; set; } = []; }
 
     public class ListBindingSource { public int Value { get; set; } }
     public class ListBindingTarget { public List<int> Items { get; } = []; }

@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -533,7 +533,7 @@ public static class Mapper {
             return false;
         }
 
-        if (sourceNullCheck != null) {
+        if (sourceNullCheck != null && !IsCollectionLikeType(methodCall.Type)) {
             mappedBody = Expression.Condition(
                 sourceNullCheck,
                 mappedBody,
@@ -580,7 +580,7 @@ public static class Mapper {
             throw new InvalidOperationException($"{_useMapMarkerName} target type '{markerTargetType.FullName}' is not compatible with resolved map output type '{mappedBody.Type.FullName}'.");
         }
 
-        if (sourceNullCheck != null) {
+        if (sourceNullCheck != null && !IsCollectionLikeType(methodCall.Type)) {
             adaptedResult = Expression.Condition(
                 sourceNullCheck,
                 adaptedResult,
@@ -881,7 +881,7 @@ public static class Mapper {
         mappedResult = null!;
         sourceNullCheck = null;
 
-        var mapExpr = ResolveMapForNullableVariants(sourceType, destinationType, resolver, preferredMapName);
+        var mapExpr = ResolveMapByPrecedence(sourceType, destinationType, resolver, preferredMapName);
         if (mapExpr == null || mapExpr.Parameters.Count != 1 || mapExpr.ReturnType == typeof(void)) {
             return false;
         }
@@ -892,11 +892,18 @@ public static class Mapper {
 
         var mappedBody = new ParameterReplaceVisitor(mapExpr.Parameters[0], adaptedSource).Visit(mapExpr.Body)!;
 
-        if (!TryAdaptMappedResult(mappedBody, destinationType, out mappedResult)) {
-            return false;
+        if (TryAdaptMappedResult(mappedBody, destinationType, out mappedResult)) {
+            return true;
         }
 
-        return true;
+        if (TryGetEnumerableElementType(mappedBody.Type, out var mappedElementType)
+            && TryGetEnumerableElementType(destinationType, out var destinationElementType)
+            && mappedElementType == destinationElementType
+            && TryMaterializeEnumerable(mappedBody, destinationType, destinationElementType, out mappedResult)) {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryBuildEnumerableMappedExpression(
@@ -917,7 +924,7 @@ public static class Mapper {
             return false;
         }
 
-        var elementMapExpr = ResolveMapForNullableVariants(sourceElementType, destinationElementType, resolver, preferredMapName);
+        var elementMapExpr = ResolveMapByPrecedence(sourceElementType, destinationElementType, resolver, preferredMapName);
         var itemParam = Expression.Parameter(sourceAccessElementType, "e");
         Expression adaptedItemResult;
         Expression? itemNullCheck;
@@ -958,7 +965,7 @@ public static class Mapper {
             return false;
         }
 
-        if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
+        if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
             sourceNullCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
         }
 
@@ -1060,20 +1067,27 @@ public static class Mapper {
             return true;
         }
 
-        var enumerableInterface = type
+        var enumerableElementTypes = type
             .GetInterfaces()
             .Concat([type])
-            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+            .Select(i => i.GetGenericArguments()[0])
+            .Distinct()
+            .ToArray();
 
-        if (enumerableInterface == null) {
+        if (enumerableElementTypes.Length == 0) {
             return false;
         }
 
-        elementType = enumerableInterface.GetGenericArguments()[0];
+        if (enumerableElementTypes.Length > 1) {
+            throw new InvalidOperationException($"Type '{type.FullName}' implements multiple IEnumerable<T> element types ({string.Join(", ", enumerableElementTypes.Select(x => x.FullName))}). Mapify cannot infer a single element type.");
+        }
+
+        elementType = enumerableElementTypes[0];
         return true;
     }
 
-    private static LambdaExpression? ResolveMapForNullableVariants(
+    private static LambdaExpression? ResolveMapByPrecedence(
         Type sourceType,
         Type destinationType,
         Func<Type, Type, string?, LambdaExpression?> resolver,
@@ -1083,10 +1097,94 @@ public static class Mapper {
         var destinationCoreType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
 
         // Prefer exact first, then lifted variants.
-        return resolver(sourceType, destinationType, preferredMapName)
+        var resolved = resolver(sourceType, destinationType, preferredMapName)
             ?? resolver(sourceType, destinationCoreType, preferredMapName)
             ?? resolver(sourceCoreType, destinationType, preferredMapName)
             ?? resolver(sourceCoreType, destinationCoreType, preferredMapName);
+
+        if (resolved != null) {
+            return resolved;
+        }
+
+        return TryResolveAssignableCollectionMap(sourceType, destinationType, resolver, preferredMapName);
+    }
+
+    private static LambdaExpression? TryResolveAssignableCollectionMap(
+        Type sourceType,
+        Type destinationType,
+        Func<Type, Type, string?, LambdaExpression?> resolver,
+        string? preferredMapName
+    ) {
+        if (!TryGetEnumerableElementType(sourceType, out _)
+            || !TryGetEnumerableElementType(destinationType, out _)) {
+            return null;
+        }
+
+        var sourceCandidates = GetCollectionResolutionCandidates(sourceType);
+        var destinationCandidates = GetCollectionResolutionCandidates(destinationType);
+
+        foreach (var sourceCandidate in sourceCandidates) {
+            foreach (var destinationCandidate in destinationCandidates) {
+                if (sourceCandidate == sourceType && destinationCandidate == destinationType) {
+                    continue;
+                }
+
+                var resolved = resolver(sourceCandidate, destinationCandidate, preferredMapName);
+                if (resolved != null) {
+                    return resolved;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<Type> GetCollectionResolutionCandidates(Type type) {
+        var candidates = new List<Type> { type };
+
+        foreach (var @interface in type.GetInterfaces()) {
+            if (@interface.IsGenericType && @interface.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
+                candidates.Add(@interface);
+            }
+        }
+
+        var distinct = candidates
+            .Distinct()
+            .OrderBy(x => x == type ? 0 : 1)
+            .ThenBy(GetCollectionCandidateRank)
+            .ThenBy(x => x.FullName, StringComparer.Ordinal)
+            .ToList();
+
+        return distinct;
+    }
+
+    private static int GetCollectionCandidateRank(Type type) {
+        if (!type.IsGenericType) {
+            return 50;
+        }
+
+        var genericDef = type.GetGenericTypeDefinition();
+        if (genericDef == typeof(IList<>)) {
+            return 1;
+        }
+
+        if (genericDef == typeof(ICollection<>)) {
+            return 2;
+        }
+
+        if (genericDef == typeof(IReadOnlyList<>)) {
+            return 3;
+        }
+
+        if (genericDef == typeof(IReadOnlyCollection<>)) {
+            return 4;
+        }
+
+        if (genericDef == typeof(IEnumerable<>)) {
+            return 5;
+        }
+
+        return 10;
     }
 
     private static bool TryAdaptSourceForMap(
@@ -1100,7 +1198,7 @@ public static class Mapper {
 
         if (sourceAccess.Type == mapSourceType) {
             // For reference/nullable values, keep null fallback behavior.
-            if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
+            if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
                 sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
             }
             return true;
@@ -1123,7 +1221,7 @@ public static class Mapper {
         }
 
         if (mapSourceType.IsAssignableFrom(sourceAccess.Type)) {
-            if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
+            if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
                 sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
             }
             adaptedSource = sourceAccess;
@@ -1172,6 +1270,9 @@ public static class Mapper {
         => type != typeof(string)
            && typeof(System.Collections.IEnumerable).IsAssignableFrom(type)
            && type != typeof(byte[]);
+
+    private static bool IsInterfaceCollectionLikeType(Type type)
+        => type.IsInterface && IsCollectionLikeType(type);
 
     private static Expression CreateDefaultValueExpression(Type type)
         => CanBeNull(type)
