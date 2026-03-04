@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 
 namespace Mapify.NET;
 
@@ -7,6 +8,12 @@ namespace Mapify.NET;
 /// </summary>
 public class Mapify : IMapify, IMapifyConfigurator {
     private bool _useDefaultMapIfTypeMapIsMissing;
+
+    private const int _defaultRecursiveUseMapDepth = 6;
+
+    private const int _defaultRecursiveMapBuildHardCap = 10;
+
+    private int _recursiveMapBuildHardCap = _defaultRecursiveMapBuildHardCap;
 
     private readonly Dictionary<MapKey, PendingMapRegistration> _pendingRegistrations = [];
 
@@ -50,6 +57,19 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="value">True to enable default-map fallback; otherwise false.</param>
     public void UseDefaultMapIfTypeMapIsMissing(bool value) {
         _useDefaultMapIfTypeMapIsMissing = value;
+    }
+
+    /// <summary>
+    /// Configures the hard cap used for recursive map expansion during map building.
+    /// Explicit <c>UseMap(..., depth)</c> marker depths above this value throw during map build.
+    /// </summary>
+    /// <param name="value">The maximum allowed recursive expansion depth. Must be positive.</param>
+    public void UseMaxRecursiveMapBuildDepth(int value) {
+        if (value <= 0) {
+            throw new ArgumentOutOfRangeException(nameof(value), "Recursive map build depth hard cap must be greater than zero.");
+        }
+
+        _recursiveMapBuildHardCap = value;
     }
 
     void IMapifyConfigurator.CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial) {
@@ -102,22 +122,89 @@ public class Mapify : IMapify, IMapifyConfigurator {
         }
 
         _buildStates[key] = MapBuildState.Building;
+        var insertedFallback = false;
         try {
-            if (pending.Partial != null && pending.Partial.Body is not MemberInitExpression) {
-                AddMapUntyped(pending.Partial, key.Name);
-            } else {
-                var created = CreateMapFromPending(key.SourceType, key.TargetType, key.Name, pending.Partial);
-                AddMapUntyped(created, key.Name);
+            var recursiveBuildDepth = DetermineRecursiveBuildDepth(pending.Partial, key);
+
+            if (!_converters.ContainsKey(key)) {
+                var fallback = CreateRecursiveFallbackMap(key.SourceType, key.TargetType);
+                SetMapUntyped(fallback, key.Name, compileCaches: false);
+                insertedFallback = true;
             }
+
+            LambdaExpression created;
+            if (pending.Partial != null && pending.Partial.Body is not MemberInitExpression) {
+                created = pending.Partial;
+                SetMapUntyped(created, key.Name, compileCaches: false);
+            } else {
+                created = null!;
+                for (var i = 0; i < recursiveBuildDepth; i++) {
+                    created = CreateMapFromPending(key.SourceType, key.TargetType, key.Name, pending.Partial);
+                    SetMapUntyped(created, key.Name, compileCaches: false);
+                }
+            }
+
+            SetMapUntyped(created, key.Name, compileCaches: true);
 
             _pendingRegistrations.Remove(key);
             _buildStates[key] = MapBuildState.Built;
         } finally {
+            if (_buildStates.TryGetValue(key, out var finalState)
+                && finalState != MapBuildState.Built
+                && insertedFallback
+                && _pendingRegistrations.ContainsKey(key)) {
+                _converters.Remove(key);
+                _compiledMapToExistingCache.Remove(key);
+                _compiledMapToNewCache.Remove(key);
+            }
+
             if (_buildStates.TryGetValue(key, out var currentState) && currentState == MapBuildState.Building) {
                 _buildStates[key] = MapBuildState.NotBuilt;
             }
         }
     }
+
+    private int DetermineRecursiveBuildDepth(LambdaExpression? partial, MapKey key) {
+        var fallbackDepth = Math.Min(_defaultRecursiveUseMapDepth, _recursiveMapBuildHardCap);
+        if (partial == null) {
+            return fallbackDepth;
+        }
+
+        var markerInfo = UseMapDepthMarkerVisitor.Extract(partial);
+        if (!markerInfo.HasUseMapMarkers) {
+            return fallbackDepth;
+        }
+
+        if (markerInfo.MaxExplicitDepth > _recursiveMapBuildHardCap) {
+            var mappingScope = key.Name == null ? "default" : $"named '{key.Name}'";
+            throw new InvalidOperationException(
+                $"UseMap depth {markerInfo.MaxExplicitDepth} exceeds the configured hard cap {_recursiveMapBuildHardCap} while building {mappingScope} map from TSource ({key.SourceType.FullName}) to TTarget ({key.TargetType.FullName}).");
+        }
+
+        var requestedDepth = 0;
+        if (markerInfo.HasDepthlessUseMapMarkers) {
+            requestedDepth = Math.Max(requestedDepth, _defaultRecursiveUseMapDepth);
+        }
+
+        if (markerInfo.MaxExplicitDepth > 0) {
+            requestedDepth = Math.Max(requestedDepth, markerInfo.MaxExplicitDepth);
+        }
+
+        if (requestedDepth <= 0) {
+            requestedDepth = _defaultRecursiveUseMapDepth;
+        }
+
+        return Math.Min(requestedDepth, _recursiveMapBuildHardCap);
+    }
+
+    private LambdaExpression CreateRecursiveFallbackMap(Type sourceType, Type targetType) {
+        var method = typeof(Mapify).GetMethod(nameof(CreateRecursiveFallbackMapGeneric), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var generic = method.MakeGenericMethod(sourceType, targetType);
+        return (LambdaExpression)generic.Invoke(null, null)!;
+    }
+
+    private static Expression<Func<TSource, TTarget>> CreateRecursiveFallbackMapGeneric<TSource, TTarget>()
+        => _ => default!;
 
     private LambdaExpression CreateMapFromPending(Type sourceType, Type targetType, string? mapName, LambdaExpression? partial) {
         var method = typeof(Mapify).GetMethod(nameof(CreateMapFromPendingGeneric), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -176,8 +263,38 @@ public class Mapify : IMapify, IMapifyConfigurator {
         generic.Invoke(this, [mappingExpression, name]);
     }
 
+    private void SetMapUntyped(LambdaExpression mappingExpression, string? name, bool compileCaches) {
+        var sourceType = mappingExpression.Parameters[0].Type;
+        var targetType = mappingExpression.ReturnType;
+
+        var method = typeof(Mapify).GetMethod(nameof(SetMapGeneric), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var generic = method.MakeGenericMethod(sourceType, targetType);
+        generic.Invoke(this, [mappingExpression, name, compileCaches]);
+    }
+
     private void AddMapGeneric<TSource, TTarget>(LambdaExpression mappingExpression, string? name)
         => AddMap((Expression<Func<TSource, TTarget>>)mappingExpression, name);
+
+    private void SetMapGeneric<TSource, TTarget>(LambdaExpression mappingExpression, string? name, bool compileCaches) {
+        var key = new MapKey(typeof(TSource), typeof(TTarget), name);
+        var expression = (Expression<Func<TSource, TTarget>>)mappingExpression;
+
+        _converters[key] = expression;
+        _compiledMapToExistingCache.Remove(key);
+        _compiledMapToNewCache.Remove(key);
+
+        if (!compileCaches) {
+            return;
+        }
+
+        if (!Mapper.ContainsParameterMarkers(expression)) {
+            _compiledMapToNewCache[key] = expression.Compile();
+        }
+
+        if (expression.Body is MemberInitExpression && !Mapper.ContainsParameterMarkers(expression)) {
+            _compiledMapToExistingCache[key] = Mapper.CompileMapper(expression);
+        }
+    }
 
     private void AddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>> mappingExpression, string? name = null) {
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
@@ -467,5 +584,61 @@ public class Mapify : IMapify, IMapifyConfigurator {
         NotBuilt = 0,
         Building = 1,
         Built = 2
+    }
+
+    private sealed class UseMapDepthMarkerVisitor : ExpressionVisitor {
+        public bool HasUseMapMarkers { get; private set; }
+
+        public bool HasDepthlessUseMapMarkers { get; private set; }
+
+        public int MaxExplicitDepth { get; private set; }
+
+        public static UseMapDepthMarkerVisitor Extract(LambdaExpression expression) {
+            var visitor = new UseMapDepthMarkerVisitor();
+            visitor.Visit(expression.Body);
+            return visitor;
+        }
+
+        protected override Expression VisitMethodCall(MethodCallExpression node) {
+            if (IsUseMapMarker(node.Method)) {
+                HasUseMapMarkers = true;
+
+                var methodDefinition = node.Method.GetGenericMethodDefinition();
+                var parameters = methodDefinition.GetParameters();
+
+                if (parameters.Length == 1
+                    || (parameters.Length == 2 && parameters[0].ParameterType == typeof(string))) {
+                    HasDepthlessUseMapMarkers = true;
+                }
+
+                if (parameters.Length == 2 && parameters[1].ParameterType == typeof(int)) {
+                    MaxExplicitDepth = Math.Max(MaxExplicitDepth, ExtractDepth(node.Arguments[1]));
+                }
+
+                if (parameters.Length == 3 && parameters[2].ParameterType == typeof(int)) {
+                    MaxExplicitDepth = Math.Max(MaxExplicitDepth, ExtractDepth(node.Arguments[2]));
+                }
+            }
+
+            return base.VisitMethodCall(node);
+        }
+
+        private static int ExtractDepth(Expression expression) {
+            if (expression is ConstantExpression constant && constant.Value is int depth && depth > 0) {
+                return depth;
+            }
+
+            throw new InvalidOperationException("UseMap depth argument must be a constant positive integer.");
+        }
+
+        private static bool IsUseMapMarker(MethodInfo method) {
+            if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProfile)) {
+                return false;
+            }
+
+            var genericDefinition = method.GetGenericMethodDefinition();
+            return string.Equals(genericDefinition.Name, "UseMap", StringComparison.Ordinal)
+                   && genericDefinition.GetGenericArguments().Length == 2;
+        }
     }
 }

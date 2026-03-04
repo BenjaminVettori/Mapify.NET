@@ -1,7 +1,8 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
 
 namespace Mapify.NET; 
 /// <summary>
@@ -37,6 +38,7 @@ public static class Mapper {
         _compiledMapToNewCache.Clear();
         _compiledSpecificMapToExistingCache.Clear();
         _compiledSpecificMapToNewCache.Clear();
+        _initializedPropertyCache.Clear();
     }
 
     /// <summary>
@@ -74,6 +76,8 @@ public static class Mapper {
     /// The key is the generated map lambda, and the value is the set of ignored member names.
     /// </summary>
     private static readonly ConditionalWeakTable<LambdaExpression, HashSet<string>> _ignoredMembersByMap = new();
+
+    private static readonly ConcurrentDictionary<Tuple<Type, Type, string>, bool> _initializedPropertyCache = new();
 
     /// <summary>
     /// Creates a new mapping with the optional partial mapping expression and adds it to the mapping dictionary
@@ -350,7 +354,7 @@ public static class Mapper {
 
             // copy existing bindings from the partial expression
             foreach (var partialBinding in partialUpdated.Bindings.OfType<MemberAssignment>()) {
-                var binding = MapPartialBinding(partialBinding, existingMapResolver, out var isIgnored);
+                var binding = MapPartialBinding(partialBinding, typeof(TDestination), existingMapResolver, out var isIgnored);
                 if (isIgnored) {
                     ignoredBindings.Add(partialBinding.Member.Name);
                 }
@@ -383,6 +387,8 @@ public static class Mapper {
                 } else if (TryGetImplicitBinding(baseParam, sourceProp, destProp, out var implicitBinding)) {
                     allBindings.Add(implicitBinding);
                 }
+            } else if (TryGetDefaultCollectionBindingForUnmappedDestination(destProp, typeof(TDestination), out var defaultCollectionBinding)) {
+                allBindings.Add(defaultCollectionBinding);
             }
         }
 
@@ -405,6 +411,7 @@ public static class Mapper {
     /// <returns></returns>
     private static MemberAssignment? MapPartialBinding(
         MemberAssignment partialBinding,
+        Type destinationType,
         Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
         out bool isIgnored
     ) {
@@ -412,7 +419,7 @@ public static class Mapper {
 
         var expr = partialBinding.Expression;
 
-        if (TryResolveIgnoreMarker(partialBinding, out var ignoredBinding)) {
+        if (TryResolveIgnoreMarker(partialBinding, destinationType, out var ignoredBinding)) {
             isIgnored = true;
             return ignoredBinding;
         }
@@ -444,6 +451,7 @@ public static class Mapper {
 
     private static bool TryResolveIgnoreMarker(
         MemberAssignment partialBinding,
+        Type destinationType,
         out MemberAssignment? mappedBinding
     ) {
         mappedBinding = null;
@@ -469,7 +477,11 @@ public static class Mapper {
             return true;
         }
 
-        mappedBinding = Expression.Bind(destProp, CreateDefaultValueExpression(destProp.PropertyType));
+        if (IsPropertyInitializedOnFreshInstance(destProp, destinationType)) {
+            return true;
+        }
+
+        mappedBinding = Expression.Bind(destProp, CreatePropertyDefaultValueExpression(destProp));
         return true;
     }
 
@@ -533,7 +545,7 @@ public static class Mapper {
             return false;
         }
 
-        if (sourceNullCheck != null) {
+        if (sourceNullCheck != null && !IsCollectionLikeType(methodCall.Type)) {
             mappedBody = Expression.Condition(
                 sourceNullCheck,
                 mappedBody,
@@ -556,19 +568,7 @@ public static class Mapper {
         var markerSourceType = genericArgs[0];
         var markerTargetType = genericArgs[1];
 
-        string? markerMapName = null;
-        Expression sourceAccess;
-
-        if (methodCall.Arguments.Count == 1) {
-            sourceAccess = methodCall.Arguments[0];
-        } else if (methodCall.Arguments.Count == 2) {
-            if (methodCall.Arguments[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
-                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
-            }
-
-            markerMapName = mapName;
-            sourceAccess = methodCall.Arguments[1];
-        } else {
+        if (!TryParseUseMapMarkerArguments(methodCall, out _, out _, out var markerMapName, out var sourceAccess)) {
             throw new InvalidOperationException($"{_useMapMarkerName} requires an explicit source argument. Use {_useMapMarkerName}<TSource, TTarget>(x.Property). For same-name properties you can omit {_useMapMarkerName} and rely on implicit nested map resolution.");
         }
 
@@ -580,7 +580,7 @@ public static class Mapper {
             throw new InvalidOperationException($"{_useMapMarkerName} target type '{markerTargetType.FullName}' is not compatible with resolved map output type '{mappedBody.Type.FullName}'.");
         }
 
-        if (sourceNullCheck != null) {
+        if (sourceNullCheck != null && !IsCollectionLikeType(methodCall.Type)) {
             adaptedResult = Expression.Condition(
                 sourceNullCheck,
                 adaptedResult,
@@ -620,19 +620,7 @@ public static class Mapper {
         var markerSourceType = genericArgs[0];
         var markerTargetType = genericArgs[1];
 
-        string? markerMapName = null;
-        Expression sourceAccess;
-
-        if (methodCall.Arguments.Count == 1) {
-            sourceAccess = methodCall.Arguments[0];
-        } else if (methodCall.Arguments.Count == 2) {
-            if (methodCall.Arguments[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
-                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
-            }
-
-            markerMapName = mapName;
-            sourceAccess = methodCall.Arguments[1];
-        } else {
+        if (!TryParseUseMapMarkerArguments(methodCall, out _, out _, out var markerMapName, out var sourceAccess)) {
             throw new InvalidOperationException($"{_useMapMarkerName} requires an explicit source argument. Use {_useMapMarkerName}<TSource, TTarget>(x.Property). For same-name properties you can omit {_useMapMarkerName} and rely on implicit nested map resolution.");
         }
 
@@ -645,10 +633,15 @@ public static class Mapper {
         }
 
         if (sourceNullCheck != null) {
+            var nullFallback = CreatePropertyDefaultValueExpression(destProp);
+            if (nullFallback.Type != adaptedResult.Type && adaptedResult.Type.IsAssignableFrom(nullFallback.Type)) {
+                nullFallback = Expression.Convert(nullFallback, adaptedResult.Type);
+            }
+
             adaptedResult = Expression.Condition(
                 sourceNullCheck,
                 adaptedResult,
-                CreateDefaultValueExpression(destProp.PropertyType)
+                nullFallback
             );
         }
 
@@ -680,8 +673,82 @@ public static class Mapper {
             return false;
         }
 
-        var parameterCount = genericDefinition.GetParameters().Length;
-        return parameterCount == 1 || parameterCount == 2;
+        var parameters = genericDefinition.GetParameters();
+        return parameters.Length == 1
+            || (parameters.Length == 2 && parameters[0].ParameterType == genericDefinition.GetGenericArguments()[0] && parameters[1].ParameterType == typeof(int))
+            || (parameters.Length == 2 && parameters[0].ParameterType == typeof(string))
+            || (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[2].ParameterType == typeof(int));
+    }
+
+    private static bool TryParseUseMapMarkerArguments(
+        MethodCallExpression methodCall,
+        out Type markerSourceType,
+        out Type markerTargetType,
+        out string? markerMapName,
+        out Expression sourceAccess
+    ) {
+        markerMapName = null;
+        sourceAccess = null!;
+
+        var genericArgs = methodCall.Method.GetGenericArguments();
+        markerSourceType = genericArgs[0];
+        markerTargetType = genericArgs[1];
+
+        var args = methodCall.Arguments;
+        var genericDefinition = methodCall.Method.GetGenericMethodDefinition();
+        var definitionGenericArgs = genericDefinition.GetGenericArguments();
+        var sourceGenericParameter = definitionGenericArgs[0];
+        var parameterTypes = genericDefinition.GetParameters().Select(parameter => parameter.ParameterType).ToArray();
+
+        if (parameterTypes.Length == 1 && parameterTypes[0] == sourceGenericParameter && args.Count == 1) {
+            sourceAccess = args[0];
+            return true;
+        }
+
+        if (parameterTypes.Length == 2
+            && parameterTypes[0] == sourceGenericParameter
+            && parameterTypes[1] == typeof(int)
+            && args.Count == 2) {
+            if (args[1] is not ConstantExpression depthConstant || depthConstant.Value is not int depth || depth <= 0) {
+                throw new InvalidOperationException($"{_useMapMarkerName} depth argument must be a constant positive integer.");
+            }
+
+            sourceAccess = args[0];
+            return true;
+        }
+
+        if (parameterTypes.Length == 2
+            && parameterTypes[0] == typeof(string)
+            && parameterTypes[1] == sourceGenericParameter
+            && args.Count == 2) {
+            if (args[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
+                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
+            }
+
+            markerMapName = mapName;
+            sourceAccess = args[1];
+            return true;
+        }
+
+        if (parameterTypes.Length == 3
+            && parameterTypes[0] == typeof(string)
+            && parameterTypes[1] == sourceGenericParameter
+            && parameterTypes[2] == typeof(int)
+            && args.Count == 3) {
+            if (args[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
+                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
+            }
+
+            if (args[2] is not ConstantExpression depthConstant || depthConstant.Value is not int depth || depth <= 0) {
+                throw new InvalidOperationException($"{_useMapMarkerName} depth argument must be a constant positive integer.");
+            }
+
+            markerMapName = mapName;
+            sourceAccess = args[1];
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsIgnoreMarker(MethodInfo method) {
@@ -835,10 +902,15 @@ public static class Mapper {
 
         // If source is nullable (or reference) and null, map to default(target).
         if (sourceNullCheck != null) {
+            var nullFallback = CreatePropertyDefaultValueExpression(destProp);
+            if (nullFallback.Type != adaptedResult.Type && adaptedResult.Type.IsAssignableFrom(nullFallback.Type)) {
+                nullFallback = Expression.Convert(nullFallback, adaptedResult.Type);
+            }
+
             adaptedResult = Expression.Condition(
                 sourceNullCheck,
                 adaptedResult,
-                CreateDefaultValueExpression(destProp.PropertyType)
+                nullFallback
             );
         }
 
@@ -881,7 +953,7 @@ public static class Mapper {
         mappedResult = null!;
         sourceNullCheck = null;
 
-        var mapExpr = ResolveMapForNullableVariants(sourceType, destinationType, resolver, preferredMapName);
+        var mapExpr = ResolveMapByPrecedence(sourceType, destinationType, resolver, preferredMapName);
         if (mapExpr == null || mapExpr.Parameters.Count != 1 || mapExpr.ReturnType == typeof(void)) {
             return false;
         }
@@ -892,11 +964,18 @@ public static class Mapper {
 
         var mappedBody = new ParameterReplaceVisitor(mapExpr.Parameters[0], adaptedSource).Visit(mapExpr.Body)!;
 
-        if (!TryAdaptMappedResult(mappedBody, destinationType, out mappedResult)) {
-            return false;
+        if (TryAdaptMappedResult(mappedBody, destinationType, out mappedResult)) {
+            return true;
         }
 
-        return true;
+        if (TryGetEnumerableElementType(mappedBody.Type, out var mappedElementType)
+            && TryGetEnumerableElementType(destinationType, out var destinationElementType)
+            && mappedElementType == destinationElementType
+            && TryMaterializeEnumerable(mappedBody, destinationType, destinationElementType, out mappedResult)) {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryBuildEnumerableMappedExpression(
@@ -917,7 +996,7 @@ public static class Mapper {
             return false;
         }
 
-        var elementMapExpr = ResolveMapForNullableVariants(sourceElementType, destinationElementType, resolver, preferredMapName);
+        var elementMapExpr = ResolveMapByPrecedence(sourceElementType, destinationElementType, resolver, preferredMapName);
         var itemParam = Expression.Parameter(sourceAccessElementType, "e");
         Expression adaptedItemResult;
         Expression? itemNullCheck;
@@ -958,8 +1037,8 @@ public static class Mapper {
             return false;
         }
 
-        if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
-            sourceNullCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+        if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
+            sourceNullCheck = CreateHasValueCheck(sourceAccess);
         }
 
         return true;
@@ -1060,20 +1139,27 @@ public static class Mapper {
             return true;
         }
 
-        var enumerableInterface = type
+        var enumerableElementTypes = type
             .GetInterfaces()
             .Concat([type])
-            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+            .Select(i => i.GetGenericArguments()[0])
+            .Distinct()
+            .ToArray();
 
-        if (enumerableInterface == null) {
+        if (enumerableElementTypes.Length == 0) {
             return false;
         }
 
-        elementType = enumerableInterface.GetGenericArguments()[0];
+        if (enumerableElementTypes.Length > 1) {
+            throw new InvalidOperationException($"Type '{type.FullName}' implements multiple IEnumerable<T> element types ({string.Join(", ", enumerableElementTypes.Select(x => x.FullName))}). Mapify cannot infer a single element type.");
+        }
+
+        elementType = enumerableElementTypes[0];
         return true;
     }
 
-    private static LambdaExpression? ResolveMapForNullableVariants(
+    private static LambdaExpression? ResolveMapByPrecedence(
         Type sourceType,
         Type destinationType,
         Func<Type, Type, string?, LambdaExpression?> resolver,
@@ -1083,10 +1169,94 @@ public static class Mapper {
         var destinationCoreType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
 
         // Prefer exact first, then lifted variants.
-        return resolver(sourceType, destinationType, preferredMapName)
+        var resolved = resolver(sourceType, destinationType, preferredMapName)
             ?? resolver(sourceType, destinationCoreType, preferredMapName)
             ?? resolver(sourceCoreType, destinationType, preferredMapName)
             ?? resolver(sourceCoreType, destinationCoreType, preferredMapName);
+
+        if (resolved != null) {
+            return resolved;
+        }
+
+        return TryResolveAssignableCollectionMap(sourceType, destinationType, resolver, preferredMapName);
+    }
+
+    private static LambdaExpression? TryResolveAssignableCollectionMap(
+        Type sourceType,
+        Type destinationType,
+        Func<Type, Type, string?, LambdaExpression?> resolver,
+        string? preferredMapName
+    ) {
+        if (!TryGetEnumerableElementType(sourceType, out _)
+            || !TryGetEnumerableElementType(destinationType, out _)) {
+            return null;
+        }
+
+        var sourceCandidates = GetCollectionResolutionCandidates(sourceType);
+        var destinationCandidates = GetCollectionResolutionCandidates(destinationType);
+
+        foreach (var sourceCandidate in sourceCandidates) {
+            foreach (var destinationCandidate in destinationCandidates) {
+                if (sourceCandidate == sourceType && destinationCandidate == destinationType) {
+                    continue;
+                }
+
+                var resolved = resolver(sourceCandidate, destinationCandidate, preferredMapName);
+                if (resolved != null) {
+                    return resolved;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<Type> GetCollectionResolutionCandidates(Type type) {
+        var candidates = new List<Type> { type };
+
+        foreach (var @interface in type.GetInterfaces()) {
+            if (@interface.IsGenericType && @interface.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
+                candidates.Add(@interface);
+            }
+        }
+
+        var distinct = candidates
+            .Distinct()
+            .OrderBy(x => x == type ? 0 : 1)
+            .ThenBy(GetCollectionCandidateRank)
+            .ThenBy(x => x.FullName, StringComparer.Ordinal)
+            .ToList();
+
+        return distinct;
+    }
+
+    private static int GetCollectionCandidateRank(Type type) {
+        if (!type.IsGenericType) {
+            return 50;
+        }
+
+        var genericDef = type.GetGenericTypeDefinition();
+        if (genericDef == typeof(IList<>)) {
+            return 1;
+        }
+
+        if (genericDef == typeof(ICollection<>)) {
+            return 2;
+        }
+
+        if (genericDef == typeof(IReadOnlyList<>)) {
+            return 3;
+        }
+
+        if (genericDef == typeof(IReadOnlyCollection<>)) {
+            return 4;
+        }
+
+        if (genericDef == typeof(IEnumerable<>)) {
+            return 5;
+        }
+
+        return 10;
     }
 
     private static bool TryAdaptSourceForMap(
@@ -1100,8 +1270,8 @@ public static class Mapper {
 
         if (sourceAccess.Type == mapSourceType) {
             // For reference/nullable values, keep null fallback behavior.
-            if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
-                sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+            if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
+                sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
             return true;
         }
@@ -1123,8 +1293,8 @@ public static class Mapper {
         }
 
         if (mapSourceType.IsAssignableFrom(sourceAccess.Type)) {
-            if (CanBeNull(sourceAccess.Type) && !IsCollectionLikeType(sourceAccess.Type)) {
-                sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+            if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
+                sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
             adaptedSource = sourceAccess;
             return true;
@@ -1172,6 +1342,215 @@ public static class Mapper {
         => type != typeof(string)
            && typeof(System.Collections.IEnumerable).IsAssignableFrom(type)
            && type != typeof(byte[]);
+
+    private static bool IsInterfaceCollectionLikeType(Type type)
+        => type.IsInterface && IsCollectionLikeType(type);
+
+    private static Expression CreateHasValueCheck(Expression valueExpression) {
+        var checkExpression = IsInterfaceCollectionLikeType(valueExpression.Type)
+            ? Expression.Convert(valueExpression, typeof(object))
+            : valueExpression;
+
+        return Expression.NotEqual(checkExpression, Expression.Constant(null, checkExpression.Type));
+    }
+
+    private static bool TryGetDefaultCollectionBindingForUnmappedDestination(
+        PropertyInfo destinationProperty,
+        Type destinationType,
+        out MemberAssignment binding
+    ) {
+        binding = null!;
+
+        if (!IsCollectionLikeType(destinationProperty.PropertyType)) {
+            return false;
+        }
+
+        if (IsPropertyInitializedOnFreshInstance(destinationProperty, destinationType)) {
+            return false;
+        }
+
+        binding = Expression.Bind(destinationProperty, CreatePropertyDefaultValueExpression(destinationProperty));
+        return true;
+    }
+
+    private static bool IsPropertyInitializedOnFreshInstance(PropertyInfo property, Type destinationType) {
+        if (!property.CanRead || property.DeclaringType == null) {
+            return false;
+        }
+
+        var cacheKey = Tuple.Create(destinationType, property.DeclaringType, property.Name);
+        return _initializedPropertyCache.GetOrAdd(cacheKey, _ => {
+            try {
+                var instance = Activator.CreateInstance(destinationType);
+                if (instance == null) {
+                    return false;
+                }
+
+                var value = property.GetValue(instance);
+                return !IsDefaultValue(value, property.PropertyType);
+            } catch {
+                return false;
+            }
+        });
+    }
+
+    private static bool IsDefaultValue(object? value, Type type) {
+        if (value == null) {
+            return true;
+        }
+
+        if (!type.IsValueType) {
+            return false;
+        }
+
+        var defaultValue = Activator.CreateInstance(type);
+        return Equals(value, defaultValue);
+    }
+
+    private static Expression CreatePropertyDefaultValueExpression(PropertyInfo property) {
+        if (IsCollectionLikeType(property.PropertyType)
+            && ShouldUseEmptyCollectionFallback(property)
+            && TryCreateEmptyCollectionExpression(property.PropertyType, out var emptyCollectionExpression)) {
+            return emptyCollectionExpression;
+        }
+
+        return CreateDefaultValueExpression(property.PropertyType);
+    }
+
+    private static bool ShouldUseEmptyCollectionFallback(PropertyInfo property)
+        => IsRequiredMember(property) || !IsPropertyDeclaredNullable(property);
+
+    private static bool IsPropertyDeclaredNullable(PropertyInfo property) {
+        if (property.PropertyType.IsValueType) {
+            return Nullable.GetUnderlyingType(property.PropertyType) != null;
+        }
+
+        var nullabilityContextType = Type.GetType("System.Reflection.NullabilityInfoContext");
+        if (nullabilityContextType != null) {
+            try {
+                var nullabilityContext = Activator.CreateInstance(nullabilityContextType);
+                var createMethod = nullabilityContextType.GetMethod("Create", [typeof(PropertyInfo)]);
+                var nullabilityInfo = createMethod?.Invoke(nullabilityContext, [property]);
+                var writeState = nullabilityInfo?.GetType().GetProperty("WriteState")?.GetValue(nullabilityInfo);
+                if (writeState != null) {
+                    var stateName = writeState.ToString();
+                    if (string.Equals(stateName, "Nullable", StringComparison.Ordinal)) {
+                        return true;
+                    }
+
+                    if (string.Equals(stateName, "NotNull", StringComparison.Ordinal)) {
+                        return false;
+                    }
+                }
+            } catch {
+            }
+        }
+
+        var propertyNullableFlag = TryGetNullableAttributeFlag(property.CustomAttributes);
+        if (propertyNullableFlag.HasValue) {
+            return propertyNullableFlag.Value == 2;
+        }
+
+        var contextNullableFlag = TryGetNullableContextFlag(property);
+        if (contextNullableFlag.HasValue) {
+            return contextNullableFlag.Value == 2;
+        }
+
+        return true;
+    }
+
+    private static byte? TryGetNullableAttributeFlag(IEnumerable<CustomAttributeData> attributes) {
+        foreach (var attribute in attributes) {
+            if (!string.Equals(attribute.AttributeType.FullName, "System.Runtime.CompilerServices.NullableAttribute", StringComparison.Ordinal)) {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Count == 1) {
+                var argument = attribute.ConstructorArguments[0];
+                if (argument.ArgumentType == typeof(byte)) {
+                    return (byte)argument.Value!;
+                }
+
+                if (argument.ArgumentType == typeof(byte[])
+                    && argument.Value is IReadOnlyCollection<CustomAttributeTypedArgument> values
+                    && values.Count > 0) {
+                    return (byte)values.First().Value!;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static byte? TryGetNullableContextFlag(PropertyInfo property) {
+        for (Type? currentType = property.DeclaringType; currentType != null; currentType = currentType.DeclaringType) {
+            var contextFlag = TryGetNullableContextFlag(currentType.CustomAttributes);
+            if (contextFlag.HasValue) {
+                return contextFlag;
+            }
+        }
+
+        return null;
+    }
+
+    private static byte? TryGetNullableContextFlag(IEnumerable<CustomAttributeData> attributes) {
+        foreach (var attribute in attributes) {
+            if (!string.Equals(attribute.AttributeType.FullName, "System.Runtime.CompilerServices.NullableContextAttribute", StringComparison.Ordinal)) {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Count == 1
+                && attribute.ConstructorArguments[0].ArgumentType == typeof(byte)) {
+                return (byte)attribute.ConstructorArguments[0].Value!;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryCreateEmptyCollectionExpression(Type type, out Expression expression) {
+        expression = null!;
+
+        if (!IsCollectionLikeType(type) || !TryGetEnumerableElementType(type, out var elementType)) {
+            return false;
+        }
+
+        if (type.IsArray) {
+            expression = Expression.NewArrayInit(elementType);
+            return true;
+        }
+
+        if (type.IsInterface && type.IsGenericType) {
+            var genericDefinition = type.GetGenericTypeDefinition();
+            if (genericDefinition == typeof(IEnumerable<>)
+                || genericDefinition == typeof(ICollection<>)
+                || genericDefinition == typeof(IList<>)
+                || genericDefinition == typeof(IReadOnlyCollection<>)
+                || genericDefinition == typeof(IReadOnlyList<>)) {
+                expression = Expression.New(typeof(List<>).MakeGenericType(elementType));
+                return true;
+            }
+        }
+
+        var parameterlessConstructor = type.GetConstructor(Type.EmptyTypes);
+        if (parameterlessConstructor != null) {
+            expression = Expression.New(parameterlessConstructor);
+            return true;
+        }
+
+        var enumerableConstructor = type.GetConstructor([typeof(IEnumerable<>).MakeGenericType(elementType)]);
+        if (enumerableConstructor != null) {
+            var emptyEnumerable = Expression.Call(
+                typeof(Enumerable),
+                nameof(Enumerable.Empty),
+                [elementType]
+            );
+            expression = Expression.New(enumerableConstructor, emptyEnumerable);
+            return true;
+        }
+
+        return false;
+    }
 
     private static Expression CreateDefaultValueExpression(Type type)
         => CanBeNull(type)

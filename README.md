@@ -168,7 +168,9 @@ CreateMap<Person, PersonDto>(x => new PersonDto {
 Ignore behavior:
 
 - For **new object mapping** (`Map(source)` / projections), ignored properties are not mapped from source.
-- If an ignored destination property is marked `required`, Mapify emits `default(T)` for that property.
+- If an ignored destination property is marked `required`:
+    - Mapify preserves an existing class/constructor initializer when present.
+    - Otherwise, Mapify emits the configured fallback (`default(T)` for non-collections, empty fallback for non-nullable collections).
 - For **map-to-existing** (`Map(source, existing)`), ignored properties are left unchanged on the target instance.
 
 You can also chain LINQ operators after `UseMap`, for example:
@@ -198,6 +200,24 @@ CreateMap<Person, PersonDto>(x => new PersonDto {
 ```
 
 In this example, Mapify applies the named element map `Address -> AddressDto` with name `"Postal"` for each item.
+
+### Recursive `UseMap` depth
+
+For self-referencing or cyclic object graphs, Mapify expands recursive `UseMap` calls to a finite depth.
+
+- If no depth is specified, the default recursion depth is `6`.
+- You can override depth per marker with:
+    - `UseMap<TSource, TTarget>(source, maxDepth)`
+    - `UseMap<TSource, TTarget>("Name", source, maxDepth)`
+- `maxDepth` must be a constant positive integer in the expression.
+
+Mapify also enforces a hard safety cap during map build:
+
+- Default hard cap: `10`
+- Configure per mapper instance: `mapify.UseMaxRecursiveMapBuildDepth(value)`
+- If any marker depth exceeds the hard cap, map building throws `InvalidOperationException`.
+
+`ProjectTo<TTarget>()` markers inside `CreateMap` expressions are rewritten to the same internal behavior, so the same recursive depth rules apply.
 
 ### 3. Use the instance mapper in-memory
 
@@ -362,6 +382,90 @@ When `CreateMap<TSource, TTarget>()` is called, Mapify automatically generates b
 
     If a map already exists for a same-name property type pair (e.g. `Address -> AddressDto`),
     Mapify uses that map implicitly before falling back to direct assignment.
+
+### Mapping Type Resolution Precedence
+
+When Mapify tries to resolve a nested map (implicit same-name property mapping or `UseMap`), it follows this precedence:
+
+1. **Exact source/target type match**
+2. **Nullable underlying-type fallback**
+3. **Assignable collection-pair fallback** (e.g. `IEnumerable<T>` map reused for `List<T>` members)
+4. **Collection element-type fallback** (only when both sides are collection shapes)
+
+#### 1) Exact map wins
+
+If both are registered, exact type map is preferred.
+
+```csharp
+CreateMap<NumberSource, NumberDto>(x => new NumberDto { Value = x.Value + 1 });
+CreateMap<NumberSource?, NumberDto?>(x => x == null ? null : new NumberDto { Value = x.Value.Value + 100 });
+
+CreateMap<Order, OrderDto>(); // Order.Number: NumberSource? -> OrderDto.Number: NumberDto?
+```
+
+`Order.Number` uses `NumberSource? -> NumberDto?` (exact), not the non-nullable fallback map.
+
+#### 2) Nullable fallback when exact nullable map is missing
+
+If only `NumberSource -> NumberDto` exists, Mapify can lift/adapt it for nullable variants where compatible.
+
+```csharp
+CreateMap<NumberSource, NumberDto>(x => new NumberDto { Value = x.Value + 1 });
+CreateMap<Order, OrderDto>(); // NumberSource? -> NumberDto?
+```
+
+Mapify uses the non-nullable map and injects null-safe adaptation.
+
+#### 3) Collection map precedence
+
+For collection properties, Mapify resolves in this order:
+
+1. exact collection-pair map
+2. assignable collection-pair map (for example `IEnumerable<TSrc> -> IEnumerable<TDest>`)
+3. element map fallback
+
+```csharp
+CreateMap<Item, ItemDto>(x => new ItemDto { Value = x.Value + 1 });
+CreateMap<List<Item>, List<ItemDto>>(x => x.Select(i => new ItemDto { Value = i.Value + 100 }).ToList());
+
+CreateMap<Batch, BatchDto>(); // List<Item> -> List<ItemDto>
+```
+
+`Batch.Items` uses `List<Item> -> List<ItemDto>` (exact collection map).
+If that map is removed but an `IEnumerable<Item> -> IEnumerable<ItemDto>` map exists, that map is used and materialized to the destination collection type.
+If neither collection map exists, Mapify falls back to `Item -> ItemDto` per element.
+
+For nullable collection members, Mapify preserves `null` safely for supported query/provider shapes.
+
+#### 4) Collection fallback + initializer preservation
+
+When Mapify needs a fallback value for a collection member (for example source is `null`, or destination member has no matching source member), it applies these rules:
+
+1. If the destination member is already initialized in the class/constructor, that user-defined value is preserved.
+2. Otherwise, if the destination collection is non-nullable (or marked `required`), Mapify uses an empty collection/array fallback where possible.
+3. Otherwise (nullable destination collection), Mapify uses `null`.
+
+For non-collection members, fallback remains `default(T)`.
+
+In short:
+
+- source member exists -> map from source value
+- source member missing -> keep user initializer when present, otherwise fallback by nullability/required rules
+- source value is `null` + non-nullable collection destination -> empty collection fallback
+
+If a custom collection type implements multiple different `IEnumerable<T>` element types, Mapify throws a descriptive configuration error because element type inference would be ambiguous.
+
+### `GetMap` / `GetRequiredMap` exact-type rule
+
+`GetMap<TSource, TTarget>()` and `GetRequiredMap<TSource, TTarget>()` always resolve by the **exact requested pair**.
+They do **not** return a different pair's map (for example, element maps or nullable underlying-type maps).
+
+Examples:
+
+- If only `Item -> ItemDto` is registered, `GetMap<List<Item>, List<ItemDto>>()` is `null` (unless default-map fallback is enabled, in which case Mapify creates a new exact `List<Item> -> List<ItemDto>` expression).
+- If only `NumberSource -> NumberDto` is registered, `GetMap<NumberSource?, NumberDto?>()` is `null` (same default fallback behavior applies).
+
+This keeps `GetMap`/`GetRequiredMap` type-safe: the returned expression always matches the exact generic types requested.
 
 ### Named Mappings
 
