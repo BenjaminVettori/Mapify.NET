@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace Mapify.NET.Tests.EFCore;
 
@@ -155,5 +156,121 @@ public partial class MapifyEfCoreProjectionTests {
             .Single();
 
         Assert.Equal(new[] { "+44-100 [MASKED]", "+44-300 [MASKED]" }, result.Phones.Select(x => x.Number).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectToRecursive_ShouldUseDefaultDepthSix() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        var root = BuildRecursiveTree(8);
+        db.RecursiveNodes.Add(root);
+        db.SaveChanges();
+
+        var mapify = new Mapify([new EfCoreRecursiveNodeDefaultDepthProfile()]);
+
+        var projected = db.RecursiveNodes
+            .Where(x => x.ParentId == null)
+            .ProjectTo<EfCoreRecursiveNodeDto>(mapify)
+            .Single();
+
+        Assert.Equal(6, CountProjectedDepth(projected));
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectToRecursive_ShouldUseExplicitMarkerDepth() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        var root = BuildRecursiveTree(8);
+        db.RecursiveNodes.Add(root);
+        db.SaveChanges();
+
+        var mapify = new Mapify([new EfCoreRecursiveNodeDepthThreeProfile()]);
+
+        var projected = db.RecursiveNodes
+            .Where(x => x.ParentId == null)
+            .ProjectTo<EfCoreRecursiveNodeDto>(mapify, "DepthThree")
+            .Single();
+
+        Assert.Equal(3, CountProjectedDepth(projected));
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenRecursiveProjectToDepthExceedsHardCap() {
+        var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+        RegisterDepthElevenRecursiveMap(mapify);
+
+        var buildMethod = typeof(Mapify).GetMethod("BuildRegisteredMaps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var tie = Assert.Throws<System.Reflection.TargetInvocationException>(() => buildMethod.Invoke(mapify, null));
+        var ex = Assert.IsType<InvalidOperationException>(tie.InnerException);
+        Assert.Contains("exceeds the configured hard cap 10", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static EfCoreRecursiveNode BuildRecursiveTree(int depth) {
+        var root = new EfCoreRecursiveNode { Name = "N1" };
+        var current = root;
+        for (var i = 2; i <= depth; i++) {
+            var child = new EfCoreRecursiveNode {
+                Name = $"N{i}",
+                Parent = current
+            };
+
+            current.Children.Add(child);
+            current = child;
+        }
+
+        return root;
+    }
+
+    private static int CountProjectedDepth(EfCoreRecursiveNodeDto node) {
+        var depth = 0;
+        var current = node;
+        while (current != null && depth < 100) {
+            depth++;
+            current = current.Children.FirstOrDefault();
+        }
+
+        return depth;
+    }
+
+    private static void RegisterDepthElevenRecursiveMap(Mapify mapify) {
+        var sourceParameter = Expression.Parameter(typeof(EfCoreRecursiveNode), "x");
+        var sourceChildren = Expression.Property(sourceParameter, nameof(EfCoreRecursiveNode.Children));
+
+        var useMapMarker = typeof(MapifyProfile)
+            .GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            .Single(m => m.Name == "UseMap"
+                && m.IsGenericMethodDefinition
+                && m.GetParameters().Length == 2
+                && m.GetParameters()[1].ParameterType == typeof(int))
+            .MakeGenericMethod(typeof(ICollection<EfCoreRecursiveNode>), typeof(List<EfCoreRecursiveNodeDto>));
+
+        var useMapCall = Expression.Call(useMapMarker, sourceChildren, Expression.Constant(11));
+
+        var body = Expression.MemberInit(
+            Expression.New(typeof(EfCoreRecursiveNodeDto)),
+            Expression.Bind(
+                typeof(EfCoreRecursiveNodeDto).GetProperty(nameof(EfCoreRecursiveNodeDto.Name))!,
+                Expression.Property(sourceParameter, nameof(EfCoreRecursiveNode.Name))
+            ),
+            Expression.Bind(
+                typeof(EfCoreRecursiveNodeDto).GetProperty(nameof(EfCoreRecursiveNodeDto.Children))!,
+                useMapCall
+            )
+        );
+
+        var partial = Expression.Lambda<Func<EfCoreRecursiveNode, EfCoreRecursiveNodeDto>>(body, sourceParameter);
+
+        var addPendingMap = typeof(Mapify)
+            .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(EfCoreRecursiveNode), typeof(EfCoreRecursiveNodeDto));
+        addPendingMap.Invoke(mapify, [null, partial]);
     }
 }

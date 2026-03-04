@@ -147,4 +147,23 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
             CreateMap<Ef6DiSource, Ef6DiTarget>();
         }
     }
+
+    private class Ef6RecursiveNodeDefaultDepthProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6RecursiveNode, Ef6RecursiveNodeDto>(x => new Ef6RecursiveNodeDto {
+                Name = x.Name,
+                Children = UseMap<ICollection<Ef6RecursiveNode>, List<Ef6RecursiveNodeDto>>(x.Children)
+            });
+        }
+    }
+
+    private class Ef6RecursiveNodeDepthThreeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6RecursiveNode, Ef6RecursiveNodeDto>("DepthThree", x => new Ef6RecursiveNodeDto {
+                Name = x.Name,
+                Children = UseMap<ICollection<Ef6RecursiveNode>, List<Ef6RecursiveNodeDto>>(x.Children, 3)
+            });
+        }
+    }
+
 }

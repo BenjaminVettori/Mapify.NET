@@ -13,7 +13,21 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
         public DbSet<Ef6Person> People { get; set; } = null!;
         public DbSet<Ef6Address> Addresses { get; set; } = null!;
         public DbSet<Ef6Phone> Phones { get; set; } = null!;
+        public DbSet<Ef6RecursiveNode> RecursiveNodes { get; set; } = null!;
         public DbSet<Ef6ProjectionIgnoreEntity> ProjectionIgnoreEntities { get; set; } = null!;
+    }
+
+    public class Ef6RecursiveNode {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int? ParentId { get; set; }
+        public Ef6RecursiveNode? Parent { get; set; }
+        public ICollection<Ef6RecursiveNode> Children { get; set; } = [];
+    }
+
+    public class Ef6RecursiveNodeDto {
+        public string Name { get; set; } = string.Empty;
+        public List<Ef6RecursiveNodeDto> Children { get; set; } = [];
     }
 
     public class Ef6ProjectionIgnoreEntity {

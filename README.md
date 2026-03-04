@@ -201,6 +201,24 @@ CreateMap<Person, PersonDto>(x => new PersonDto {
 
 In this example, Mapify applies the named element map `Address -> AddressDto` with name `"Postal"` for each item.
 
+### Recursive `UseMap` depth
+
+For self-referencing or cyclic object graphs, Mapify expands recursive `UseMap` calls to a finite depth.
+
+- If no depth is specified, the default recursion depth is `6`.
+- You can override depth per marker with:
+    - `UseMap<TSource, TTarget>(source, maxDepth)`
+    - `UseMap<TSource, TTarget>("Name", source, maxDepth)`
+- `maxDepth` must be a constant positive integer in the expression.
+
+Mapify also enforces a hard safety cap during map build:
+
+- Default hard cap: `10`
+- Configure per mapper instance: `mapify.UseMaxRecursiveMapBuildDepth(value)`
+- If any marker depth exceeds the hard cap, map building throws `InvalidOperationException`.
+
+`ProjectTo<TTarget>()` markers inside `CreateMap` expressions are rewritten to the same internal behavior, so the same recursive depth rules apply.
+
 ### 3. Use the instance mapper in-memory
 
 ```csharp

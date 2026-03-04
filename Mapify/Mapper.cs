@@ -565,19 +565,7 @@ public static class Mapper {
         var markerSourceType = genericArgs[0];
         var markerTargetType = genericArgs[1];
 
-        string? markerMapName = null;
-        Expression sourceAccess;
-
-        if (methodCall.Arguments.Count == 1) {
-            sourceAccess = methodCall.Arguments[0];
-        } else if (methodCall.Arguments.Count == 2) {
-            if (methodCall.Arguments[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
-                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
-            }
-
-            markerMapName = mapName;
-            sourceAccess = methodCall.Arguments[1];
-        } else {
+        if (!TryParseUseMapMarkerArguments(methodCall, out _, out _, out var markerMapName, out var sourceAccess)) {
             throw new InvalidOperationException($"{_useMapMarkerName} requires an explicit source argument. Use {_useMapMarkerName}<TSource, TTarget>(x.Property). For same-name properties you can omit {_useMapMarkerName} and rely on implicit nested map resolution.");
         }
 
@@ -629,19 +617,7 @@ public static class Mapper {
         var markerSourceType = genericArgs[0];
         var markerTargetType = genericArgs[1];
 
-        string? markerMapName = null;
-        Expression sourceAccess;
-
-        if (methodCall.Arguments.Count == 1) {
-            sourceAccess = methodCall.Arguments[0];
-        } else if (methodCall.Arguments.Count == 2) {
-            if (methodCall.Arguments[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
-                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
-            }
-
-            markerMapName = mapName;
-            sourceAccess = methodCall.Arguments[1];
-        } else {
+        if (!TryParseUseMapMarkerArguments(methodCall, out _, out _, out var markerMapName, out var sourceAccess)) {
             throw new InvalidOperationException($"{_useMapMarkerName} requires an explicit source argument. Use {_useMapMarkerName}<TSource, TTarget>(x.Property). For same-name properties you can omit {_useMapMarkerName} and rely on implicit nested map resolution.");
         }
 
@@ -694,8 +670,67 @@ public static class Mapper {
             return false;
         }
 
-        var parameterCount = genericDefinition.GetParameters().Length;
-        return parameterCount == 1 || parameterCount == 2;
+        var parameters = genericDefinition.GetParameters();
+        return parameters.Length == 1
+            || (parameters.Length == 2 && parameters[0].ParameterType == genericDefinition.GetGenericArguments()[0] && parameters[1].ParameterType == typeof(int))
+            || (parameters.Length == 2 && parameters[0].ParameterType == typeof(string))
+            || (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[2].ParameterType == typeof(int));
+    }
+
+    private static bool TryParseUseMapMarkerArguments(
+        MethodCallExpression methodCall,
+        out Type markerSourceType,
+        out Type markerTargetType,
+        out string? markerMapName,
+        out Expression sourceAccess
+    ) {
+        markerMapName = null;
+        sourceAccess = null!;
+
+        var genericArgs = methodCall.Method.GetGenericArguments();
+        markerSourceType = genericArgs[0];
+        markerTargetType = genericArgs[1];
+
+        var args = methodCall.Arguments;
+        if (args.Count == 1) {
+            sourceAccess = args[0];
+            return true;
+        }
+
+        if (args.Count == 2) {
+            if (args[0] is ConstantExpression nameConstant && nameConstant.Value is string mapName) {
+                if (string.IsNullOrWhiteSpace(mapName)) {
+                    throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
+                }
+
+                markerMapName = mapName;
+                sourceAccess = args[1];
+                return true;
+            }
+
+            if (args[1] is not ConstantExpression depthConstant || depthConstant.Value is not int depth || depth <= 0) {
+                throw new InvalidOperationException($"{_useMapMarkerName} depth argument must be a constant positive integer.");
+            }
+
+            sourceAccess = args[0];
+            return true;
+        }
+
+        if (args.Count == 3) {
+            if (args[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
+                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
+            }
+
+            if (args[2] is not ConstantExpression depthConstant || depthConstant.Value is not int depth || depth <= 0) {
+                throw new InvalidOperationException($"{_useMapMarkerName} depth argument must be a constant positive integer.");
+            }
+
+            markerMapName = mapName;
+            sourceAccess = args[1];
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsIgnoreMarker(MethodInfo method) {

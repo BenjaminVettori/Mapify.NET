@@ -91,6 +91,20 @@ public abstract class MapifyProfile {
     }
 
     /// <summary>
+    /// Marker used inside mapping expressions to force using a registered map
+    /// from <typeparamref name="TSource"/> to <typeparamref name="TTarget"/>
+    /// with an explicit recursion depth.
+    /// </summary>
+    /// <typeparam name="TSource">The source member type.</typeparam>
+    /// <typeparam name="TTarget">The destination member type.</typeparam>
+    /// <param name="source">The source expression to map.</param>
+    /// <param name="maxDepth">The maximum recursion depth for this marker.</param>
+    /// <returns>Never returns; this method is only a marker in expression trees.</returns>
+    protected static TTarget UseMap<TSource, TTarget>(TSource source, int maxDepth) {
+        throw new InvalidOperationException($"{nameof(UseMap)} can only be used as a marker inside a mapping expression during profile configuration.");
+    }
+
+    /// <summary>
     /// Marker used inside mapping expressions to force using a specific named map
     /// from <typeparamref name="TSource"/> to <typeparamref name="TTarget"/>.
     /// </summary>
@@ -100,6 +114,21 @@ public abstract class MapifyProfile {
     /// <param name="source">The source expression to map.</param>
     /// <returns>Never returns; this method is only a marker in expression trees.</returns>
     protected static TTarget UseMap<TSource, TTarget>(string name, TSource source) {
+        throw new InvalidOperationException($"{nameof(UseMap)} can only be used as a marker inside a mapping expression during profile configuration.");
+    }
+
+    /// <summary>
+    /// Marker used inside mapping expressions to force using a specific named map
+    /// from <typeparamref name="TSource"/> to <typeparamref name="TTarget"/>
+    /// with an explicit recursion depth.
+    /// </summary>
+    /// <typeparam name="TSource">The source member type.</typeparam>
+    /// <typeparam name="TTarget">The destination member type.</typeparam>
+    /// <param name="name">The mapping name to resolve.</param>
+    /// <param name="source">The source expression to map.</param>
+    /// <param name="maxDepth">The maximum recursion depth for this marker.</param>
+    /// <returns>Never returns; this method is only a marker in expression trees.</returns>
+    protected static TTarget UseMap<TSource, TTarget>(string name, TSource source, int maxDepth) {
         throw new InvalidOperationException($"{nameof(UseMap)} can only be used as a marker inside a mapping expression during profile configuration.");
     }
 

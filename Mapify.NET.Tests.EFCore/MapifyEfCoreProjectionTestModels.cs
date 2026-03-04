@@ -7,7 +7,21 @@ public partial class MapifyEfCoreProjectionTests {
         public DbSet<EfCorePerson> People => Set<EfCorePerson>();
         public DbSet<EfCoreAddress> Addresses => Set<EfCoreAddress>();
         public DbSet<EfCorePhone> Phones => Set<EfCorePhone>();
+        public DbSet<EfCoreRecursiveNode> RecursiveNodes => Set<EfCoreRecursiveNode>();
         public DbSet<EfCoreProjectionIgnoreEntity> ProjectionIgnoreEntities => Set<EfCoreProjectionIgnoreEntity>();
+    }
+
+    private sealed class EfCoreRecursiveNode {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int? ParentId { get; set; }
+        public EfCoreRecursiveNode? Parent { get; set; }
+        public ICollection<EfCoreRecursiveNode> Children { get; set; } = [];
+    }
+
+    private sealed class EfCoreRecursiveNodeDto {
+        public string Name { get; set; } = string.Empty;
+        public List<EfCoreRecursiveNodeDto> Children { get; set; } = [];
     }
 
     private sealed class EfCoreProjectionIgnoreEntity {

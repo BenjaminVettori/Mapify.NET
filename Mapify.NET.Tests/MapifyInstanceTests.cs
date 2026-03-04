@@ -1,3 +1,5 @@
+using System.Linq.Expressions;
+
 namespace Mapify.NET.Tests; 
 public class MapifyInstanceTests {
     private class Source {
@@ -333,6 +335,36 @@ public class MapifyInstanceTests {
 
     private class ParameterizedTarget {
         public int Value { get; set; }
+    }
+
+    private class RecursiveNodeSource {
+        public int Value { get; set; }
+        public RecursiveNodeSource? Next { get; set; }
+    }
+
+    private class RecursiveNodeTarget {
+        public int Value { get; set; }
+        public RecursiveNodeTarget? Next { get; set; }
+    }
+
+    private class RecursiveNodeDepthThreeSource {
+        public int Value { get; set; }
+        public RecursiveNodeDepthThreeSource? Next { get; set; }
+    }
+
+    private class RecursiveNodeDepthThreeTarget {
+        public int Value { get; set; }
+        public RecursiveNodeDepthThreeTarget? Next { get; set; }
+    }
+
+    private class RecursiveNodeDepthElevenSource {
+        public int Value { get; set; }
+        public RecursiveNodeDepthElevenSource? Next { get; set; }
+    }
+
+    private class RecursiveNodeDepthElevenTarget {
+        public int Value { get; set; }
+        public RecursiveNodeDepthElevenTarget? Next { get; set; }
     }
 
     private enum FaultProfileMode {
@@ -768,6 +800,24 @@ public class MapifyInstanceTests {
         }
     }
 
+    private class RecursiveNodeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<RecursiveNodeSource, RecursiveNodeTarget>(x => new RecursiveNodeTarget {
+                Value = x.Value,
+                Next = UseMap<RecursiveNodeSource?, RecursiveNodeTarget?>(x.Next)
+            });
+        }
+    }
+
+    private class RecursiveNodeDepthThreeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<RecursiveNodeDepthThreeSource, RecursiveNodeDepthThreeTarget>(x => new RecursiveNodeDepthThreeTarget {
+                Value = x.Value,
+                Next = UseMap<RecursiveNodeDepthThreeSource?, RecursiveNodeDepthThreeTarget?>(x.Next, 3)
+            });
+        }
+    }
+
     [Fact]
     public void Map_ToNewObject_ShouldWorkLikeStaticMapper() {
         var mapify = new Mapify();
@@ -825,6 +875,99 @@ public class MapifyInstanceTests {
         var mapped = mapify.Map<SourceA, TargetA>(new SourceA { ValueA = 9 });
 
         Assert.Equal(9, mapped.ValueA);
+    }
+
+    [Fact]
+    public void Map_ShouldSupportSelfRecursiveUseMap_ForFiniteChains() {
+        var mapify = new Mapify(new RecursiveNodeProfile());
+
+        var source = new RecursiveNodeSource {
+            Value = 1,
+            Next = new RecursiveNodeSource {
+                Value = 2,
+                Next = new RecursiveNodeSource {
+                    Value = 3
+                }
+            }
+        };
+
+        var mapped = mapify.Map<RecursiveNodeSource, RecursiveNodeTarget>(source);
+
+        Assert.NotNull(mapped);
+        Assert.Equal(1, mapped.Value);
+        Assert.NotNull(mapped.Next);
+        Assert.Equal(2, mapped.Next!.Value);
+        Assert.NotNull(mapped.Next.Next);
+        Assert.Equal(3, mapped.Next.Next!.Value);
+    }
+
+    [Fact]
+    public void Map_ShouldNotLoopInfinitely_WhenRecursiveSourceGraphContainsCycle() {
+        var mapify = new Mapify(new RecursiveNodeProfile());
+
+        var first = new RecursiveNodeSource { Value = 1 };
+        var second = new RecursiveNodeSource { Value = 2 };
+        first.Next = second;
+        second.Next = first;
+
+        var mapped = mapify.Map<RecursiveNodeSource, RecursiveNodeTarget>(first);
+
+        var cursor = mapped;
+        var steps = 0;
+        while (cursor != null && steps < 20) {
+            steps++;
+            cursor = cursor.Next;
+        }
+
+        Assert.True(steps < 20, "Mapped recursive chain should terminate and must not loop infinitely.");
+        Assert.Null(cursor);
+    }
+
+    [Fact]
+    public void Map_RecursiveUseMapWithoutDepth_ShouldUseDefaultDepthOfSix() {
+        var mapify = new Mapify(new RecursiveNodeProfile());
+
+        var source = BuildRecursiveChain(8);
+        var mapped = mapify.Map<RecursiveNodeSource, RecursiveNodeTarget>(source);
+
+        Assert.Equal(6, CountRecursiveChain(mapped));
+    }
+
+    [Fact]
+    public void Map_RecursiveUseMapWithDepth_ShouldUseMarkerDepth() {
+        var mapify = new Mapify(new RecursiveNodeDepthThreeProfile());
+
+        var source = BuildRecursiveChainDepthThree(8);
+        var mapped = mapify.Map<RecursiveNodeDepthThreeSource, RecursiveNodeDepthThreeTarget>(source);
+
+        Assert.Equal(3, CountRecursiveChainDepthThree(mapped));
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenUseMapDepthExceedsDefaultHardCap() {
+        var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+        RegisterRecursiveDepthMap(mapify, depth: 11);
+
+        var buildMethod = typeof(Mapify).GetMethod("BuildRegisteredMaps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var tie = Assert.Throws<System.Reflection.TargetInvocationException>(() => buildMethod.Invoke(mapify, null));
+        var ex = Assert.IsType<InvalidOperationException>(tie.InnerException);
+        Assert.Contains("exceeds the configured hard cap 10", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Constructor_ShouldAllowHigherUseMapDepth_WhenHardCapIsIncreased() {
+        var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+        mapify.UseMaxRecursiveMapBuildDepth(12);
+
+        RegisterRecursiveDepthMap(mapify, depth: 11);
+
+        var buildMethod = typeof(Mapify).GetMethod("BuildRegisteredMaps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        buildMethod.Invoke(mapify, null);
+
+        var source = BuildRecursiveChainDepthEleven(11);
+        var mapped = mapify.Map<RecursiveNodeDepthElevenSource, RecursiveNodeDepthElevenTarget>(source);
+
+        Assert.Equal(11, CountRecursiveChainDepthEleven(mapped));
     }
 
     [Fact]
@@ -1010,6 +1153,106 @@ public class MapifyInstanceTests {
         var field = typeof(Mapify).GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var dictionary = field.GetValue(mapify)!;
         dictionary.GetType().GetMethod("Clear")!.Invoke(dictionary, null);
+    }
+
+    private static RecursiveNodeSource BuildRecursiveChain(int length) {
+        var head = new RecursiveNodeSource { Value = 1 };
+        var current = head;
+        for (var i = 2; i <= length; i++) {
+            current.Next = new RecursiveNodeSource { Value = i };
+            current = current.Next;
+        }
+
+        return head;
+    }
+
+    private static int CountRecursiveChain(RecursiveNodeTarget? head) {
+        var count = 0;
+        var current = head;
+        while (current != null && count < 100) {
+            count++;
+            current = current.Next;
+        }
+
+        return count;
+    }
+
+    private static RecursiveNodeDepthThreeSource BuildRecursiveChainDepthThree(int length) {
+        var head = new RecursiveNodeDepthThreeSource { Value = 1 };
+        var current = head;
+        for (var i = 2; i <= length; i++) {
+            current.Next = new RecursiveNodeDepthThreeSource { Value = i };
+            current = current.Next;
+        }
+
+        return head;
+    }
+
+    private static int CountRecursiveChainDepthThree(RecursiveNodeDepthThreeTarget? head) {
+        var count = 0;
+        var current = head;
+        while (current != null && count < 100) {
+            count++;
+            current = current.Next;
+        }
+
+        return count;
+    }
+
+    private static RecursiveNodeDepthElevenSource BuildRecursiveChainDepthEleven(int length) {
+        var head = new RecursiveNodeDepthElevenSource { Value = 1 };
+        var current = head;
+        for (var i = 2; i <= length; i++) {
+            current.Next = new RecursiveNodeDepthElevenSource { Value = i };
+            current = current.Next;
+        }
+
+        return head;
+    }
+
+    private static int CountRecursiveChainDepthEleven(RecursiveNodeDepthElevenTarget? head) {
+        var count = 0;
+        var current = head;
+        while (current != null && count < 200) {
+            count++;
+            current = current.Next;
+        }
+
+        return count;
+    }
+
+    private static void RegisterRecursiveDepthMap(Mapify mapify, int depth) {
+        var sourceParameter = Expression.Parameter(typeof(RecursiveNodeDepthElevenSource), "x");
+        var sourceNext = Expression.Property(sourceParameter, nameof(RecursiveNodeDepthElevenSource.Next));
+
+        var useMapMarker = typeof(MapifyProfile)
+            .GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            .Single(m => m.Name == "UseMap"
+                && m.IsGenericMethodDefinition
+                && m.GetParameters().Length == 2
+                && m.GetParameters()[1].ParameterType == typeof(int))
+            .MakeGenericMethod(typeof(RecursiveNodeDepthElevenSource), typeof(RecursiveNodeDepthElevenTarget));
+
+        var useMapCall = Expression.Call(useMapMarker, sourceNext, Expression.Constant(depth));
+
+        var body = Expression.MemberInit(
+            Expression.New(typeof(RecursiveNodeDepthElevenTarget)),
+            Expression.Bind(
+                typeof(RecursiveNodeDepthElevenTarget).GetProperty(nameof(RecursiveNodeDepthElevenTarget.Value))!,
+                Expression.Property(sourceParameter, nameof(RecursiveNodeDepthElevenSource.Value))
+            ),
+            Expression.Bind(
+                typeof(RecursiveNodeDepthElevenTarget).GetProperty(nameof(RecursiveNodeDepthElevenTarget.Next))!,
+                useMapCall
+            )
+        );
+
+        var partial = Expression.Lambda<Func<RecursiveNodeDepthElevenSource, RecursiveNodeDepthElevenTarget>>(body, sourceParameter);
+
+        var addPendingMap = typeof(Mapify)
+            .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(RecursiveNodeDepthElevenSource), typeof(RecursiveNodeDepthElevenTarget));
+        addPendingMap.Invoke(mapify, [null, partial]);
     }
 
     [Fact]

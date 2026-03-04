@@ -131,4 +131,23 @@ public partial class MapifyEfCoreProjectionTests {
             });
         }
     }
+
+    private sealed class EfCoreRecursiveNodeDefaultDepthProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreRecursiveNode, EfCoreRecursiveNodeDto>(x => new EfCoreRecursiveNodeDto {
+                Name = x.Name,
+                Children = UseMap<ICollection<EfCoreRecursiveNode>, List<EfCoreRecursiveNodeDto>>(x.Children)
+            });
+        }
+    }
+
+    private sealed class EfCoreRecursiveNodeDepthThreeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreRecursiveNode, EfCoreRecursiveNodeDto>("DepthThree", x => new EfCoreRecursiveNodeDto {
+                Name = x.Name,
+                Children = UseMap<ICollection<EfCoreRecursiveNode>, List<EfCoreRecursiveNodeDto>>(x.Children, 3)
+            });
+        }
+    }
+
 }
