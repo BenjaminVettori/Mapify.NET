@@ -2,6 +2,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
 
 namespace Mapify.NET; 
 /// <summary>
@@ -74,6 +75,8 @@ public static class Mapper {
     /// The key is the generated map lambda, and the value is the set of ignored member names.
     /// </summary>
     private static readonly ConditionalWeakTable<LambdaExpression, HashSet<string>> _ignoredMembersByMap = new();
+
+    private static readonly ConcurrentDictionary<Tuple<Type, string>, bool> _initializedPropertyCache = new();
 
     /// <summary>
     /// Creates a new mapping with the optional partial mapping expression and adds it to the mapping dictionary
@@ -468,6 +471,10 @@ public static class Mapper {
         }
 
         if (!IsRequiredMember(destProp)) {
+            return true;
+        }
+
+        if (IsPropertyInitializedOnFreshInstance(destProp)) {
             return true;
         }
 
@@ -1304,8 +1311,46 @@ public static class Mapper {
             return false;
         }
 
+        if (IsPropertyInitializedOnFreshInstance(destinationProperty)) {
+            return false;
+        }
+
         binding = Expression.Bind(destinationProperty, CreatePropertyDefaultValueExpression(destinationProperty));
         return true;
+    }
+
+    private static bool IsPropertyInitializedOnFreshInstance(PropertyInfo property) {
+        if (property.DeclaringType == null || !property.CanRead) {
+            return false;
+        }
+
+        var cacheKey = Tuple.Create(property.DeclaringType, property.Name);
+        return _initializedPropertyCache.GetOrAdd(cacheKey, _ => {
+            try {
+                var instance = Activator.CreateInstance(property.DeclaringType);
+                if (instance == null) {
+                    return false;
+                }
+
+                var value = property.GetValue(instance);
+                return !IsDefaultValue(value, property.PropertyType);
+            } catch {
+                return false;
+            }
+        });
+    }
+
+    private static bool IsDefaultValue(object? value, Type type) {
+        if (value == null) {
+            return true;
+        }
+
+        if (!type.IsValueType) {
+            return false;
+        }
+
+        var defaultValue = Activator.CreateInstance(type);
+        return Equals(value, defaultValue);
     }
 
     private static Expression CreatePropertyDefaultValueExpression(PropertyInfo property) {

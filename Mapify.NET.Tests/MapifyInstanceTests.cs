@@ -828,6 +828,34 @@ public class MapifyInstanceTests {
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenCyclicMapDependencyIsDetected() {
+        var mapify = new Mapify();
+
+        var addPendingMap = typeof(Mapify)
+            .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(SourceA), typeof(TargetA));
+        addPendingMap.Invoke(mapify, [null, null]);
+
+        var mapKeyType = typeof(Mapify).GetNestedType("MapKey", System.Reflection.BindingFlags.NonPublic)!;
+        var key = Activator.CreateInstance(mapKeyType, [typeof(SourceA), typeof(TargetA), null])!;
+
+        var mapBuildStateType = typeof(Mapify).GetNestedType("MapBuildState", System.Reflection.BindingFlags.NonPublic)!;
+        var buildingState = Enum.Parse(mapBuildStateType, "Building");
+
+        var buildStatesField = typeof(Mapify).GetField("_buildStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var buildStates = buildStatesField.GetValue(mapify)!;
+        buildStates.GetType().GetMethod("Add")!.Invoke(buildStates, [key, buildingState]);
+
+        var ensureBuilt = typeof(Mapify).GetMethod("EnsureBuilt", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var tie = Assert.Throws<System.Reflection.TargetInvocationException>(() => ensureBuilt.Invoke(mapify, [key]));
+        var ex = Assert.IsType<InvalidOperationException>(tie.InnerException);
+
+        Assert.Equal(
+            $"Cyclic mapping dependency detected while building default map from TSource ({typeof(SourceA).FullName}) to TTarget ({typeof(TargetA).FullName}).",
+            ex.Message);
+    }
+
+    [Fact]
     public void Constructor_ShouldThrow_WhenWhitespaceMapNameIsConfigured() {
         FaultProfile.Mode = FaultProfileMode.WhitespaceName;
         try {

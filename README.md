@@ -168,7 +168,9 @@ CreateMap<Person, PersonDto>(x => new PersonDto {
 Ignore behavior:
 
 - For **new object mapping** (`Map(source)` / projections), ignored properties are not mapped from source.
-- If an ignored destination property is marked `required`, Mapify emits `default(T)` for that property.
+- If an ignored destination property is marked `required`:
+    - Mapify preserves an existing class/constructor initializer when present.
+    - Otherwise, Mapify emits the configured fallback (`default(T)` for non-collections, empty fallback for non-nullable collections).
 - For **map-to-existing** (`Map(source, existing)`), ignored properties are left unchanged on the target instance.
 
 You can also chain LINQ operators after `UseMap`, for example:
@@ -415,7 +417,23 @@ CreateMap<Batch, BatchDto>(); // List<Item> -> List<ItemDto>
 If that map is removed but an `IEnumerable<Item> -> IEnumerable<ItemDto>` map exists, that map is used and materialized to the destination collection type.
 If neither collection map exists, Mapify falls back to `Item -> ItemDto` per element.
 
-For nullable collection members, Mapify now preserves `null` safely (it does not invoke `Select` on a `null` source).
+For nullable collection members, Mapify preserves `null` safely for supported query/provider shapes.
+
+#### 4) Collection fallback + initializer preservation
+
+When Mapify needs a fallback value for a collection member (for example source is `null`, or destination member has no matching source member), it applies these rules:
+
+1. If the destination member is already initialized in the class/constructor, that user-defined value is preserved.
+2. Otherwise, if the destination collection is non-nullable (or marked `required`), Mapify uses an empty collection/array fallback where possible.
+3. Otherwise (nullable destination collection), Mapify uses `null`.
+
+For non-collection members, fallback remains `default(T)`.
+
+In short:
+
+- source member exists -> map from source value
+- source member missing -> keep user initializer when present, otherwise fallback by nullability/required rules
+- source value is `null` + non-nullable collection destination -> empty collection fallback
 
 If a custom collection type implements multiple different `IEnumerable<T>` element types, Mapify throws a descriptive configuration error because element type inference would be ambiguous.
 
