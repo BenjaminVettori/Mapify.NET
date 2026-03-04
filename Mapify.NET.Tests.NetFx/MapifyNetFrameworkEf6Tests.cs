@@ -330,6 +330,23 @@ public class MapifyNetFrameworkEf6Tests {
     }
 
     [Fact]
+    public void CreateMap_ShouldUseNullOrEmptyCollectionFallback_ForNullableAndRequiredTargets_InEf6Project() {
+        var nullableMap = Mapper.CreateMap<Ef6NullCollectionSource, Ef6NullableCollectionTarget>();
+        var requiredMap = Mapper.CreateMap<Ef6NullCollectionSource, Ef6NonNullableCollectionTarget>();
+
+        var source = new Ef6NullCollectionSource {
+            Numbers = null
+        };
+
+        var nullableResult = nullableMap.Map(source);
+        var requiredResult = requiredMap.Map(source);
+
+        Assert.Null(nullableResult.Numbers);
+        Assert.NotNull(requiredResult.Numbers);
+        Assert.Empty(requiredResult.Numbers);
+    }
+
+    [Fact]
     public void InstanceMapify_ShouldImplicitlyUseExistingMapsForNestedAndCollectionMembers_InEf6Projection() {
         using var connection = Effort.DbConnectionFactory.CreateTransient();
         using var db = new Ef6MapifyContext(connection);
@@ -836,6 +853,18 @@ public class MapifyNetFrameworkEf6Tests {
     public class Ef6ProjectionIgnoreDto {
         public string Included { get; set; } = string.Empty;
         public string? IgnoredFromDb { get; set; }
+    }
+
+    public class Ef6NullCollectionSource {
+        public List<int>? Numbers { get; set; }
+    }
+
+    public class Ef6NullableCollectionTarget {
+        public List<int>? Numbers { get; set; }
+    }
+
+    public class Ef6NonNullableCollectionTarget {
+        public List<int> Numbers { get; set; } = null!;
     }
 
     private class Ef6PhoneProfile : MapifyProfile {

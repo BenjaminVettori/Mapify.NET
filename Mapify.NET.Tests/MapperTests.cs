@@ -583,6 +583,22 @@ public class MapperTests
     }
 
     [Fact]
+    public void CreateMap_ShouldInitializeRequiredCollection_WhenSourceCollectionIsNull()
+    {
+        Mapper.AddMap<PrecedenceCollectionElementSource, PrecedenceCollectionElementTarget>(
+            x => new PrecedenceCollectionElementTarget { Value = x.Value + 1 }
+        );
+
+        var map = Mapper.CreateMap<RequiredCollectionContainerSource, RequiredCollectionContainerTarget>();
+        var mapped = map.Map(new RequiredCollectionContainerSource {
+            Items = null
+        });
+
+        Assert.NotNull(mapped.Items);
+        Assert.Empty(mapped.Items);
+    }
+
+    [Fact]
     public void CreateMap_ShouldThrowForAmbiguousEnumerableElementType()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -805,6 +821,8 @@ public class MapperTests
     public class PrecedenceCollectionContainerTarget { public List<PrecedenceCollectionElementTarget> Items { get; set; } = []; }
     public class NullableCollectionContainerSource { public List<PrecedenceCollectionElementSource>? Items { get; set; } }
     public class NullableCollectionContainerTarget { public List<PrecedenceCollectionElementTarget>? Items { get; set; } }
+    public class RequiredCollectionContainerSource { public List<PrecedenceCollectionElementSource>? Items { get; set; } }
+    public class RequiredCollectionContainerTarget { public required List<PrecedenceCollectionElementTarget> Items { get; set; } }
 
     public class AmbiguousEnumerable : IEnumerable<int>, IEnumerable<string> {
         IEnumerator<int> IEnumerable<int>.GetEnumerator() => Array.Empty<int>().AsEnumerable().GetEnumerator();

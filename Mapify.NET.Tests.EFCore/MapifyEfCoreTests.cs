@@ -261,6 +261,23 @@ public class MapifyEfCoreTests {
     }
 
     [Fact]
+    public void CreateMap_ShouldUseNullOrEmptyCollectionFallback_ForNullableAndRequiredTargets_InEfCoreProject() {
+        var nullableMap = Mapper.CreateMap<EfCoreNullCollectionSource, EfCoreNullableCollectionTarget>();
+        var requiredMap = Mapper.CreateMap<EfCoreNullCollectionSource, EfCoreRequiredCollectionTarget>();
+
+        var source = new EfCoreNullCollectionSource {
+            Numbers = null
+        };
+
+        var nullableResult = nullableMap.Map(source);
+        var requiredResult = requiredMap.Map(source);
+
+        Assert.Null(nullableResult.Numbers);
+        Assert.NotNull(requiredResult.Numbers);
+        Assert.Empty(requiredResult.Numbers);
+    }
+
+    [Fact]
     public void InstanceMapify_ShouldImplicitlyUseExistingMapsForNestedAndArrayMembers_InEfCoreProjection() {
         var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -799,6 +816,18 @@ public class MapifyEfCoreTests {
 
     private sealed class EfCorePersonRuntimeParameterDto {
         public int AdjustedId { get; set; }
+    }
+
+    private sealed class EfCoreNullCollectionSource {
+        public List<int>? Numbers { get; set; }
+    }
+
+    private sealed class EfCoreNullableCollectionTarget {
+        public List<int>? Numbers { get; set; }
+    }
+
+    private sealed class EfCoreRequiredCollectionTarget {
+        public required List<int> Numbers { get; set; }
     }
 
     private sealed class EfCorePhoneProfile : MapifyProfile {

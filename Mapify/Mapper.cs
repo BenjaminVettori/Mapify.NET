@@ -383,6 +383,8 @@ public static class Mapper {
                 } else if (TryGetImplicitBinding(baseParam, sourceProp, destProp, out var implicitBinding)) {
                     allBindings.Add(implicitBinding);
                 }
+            } else if (TryGetDefaultCollectionBindingForUnmappedDestination(destProp, out var defaultCollectionBinding)) {
+                allBindings.Add(defaultCollectionBinding);
             }
         }
 
@@ -469,7 +471,7 @@ public static class Mapper {
             return true;
         }
 
-        mappedBinding = Expression.Bind(destProp, CreateDefaultValueExpression(destProp.PropertyType));
+        mappedBinding = Expression.Bind(destProp, CreatePropertyDefaultValueExpression(destProp));
         return true;
     }
 
@@ -645,10 +647,15 @@ public static class Mapper {
         }
 
         if (sourceNullCheck != null) {
+            var nullFallback = CreatePropertyDefaultValueExpression(destProp);
+            if (nullFallback.Type != adaptedResult.Type && adaptedResult.Type.IsAssignableFrom(nullFallback.Type)) {
+                nullFallback = Expression.Convert(nullFallback, adaptedResult.Type);
+            }
+
             adaptedResult = Expression.Condition(
                 sourceNullCheck,
                 adaptedResult,
-                CreateDefaultValueExpression(destProp.PropertyType)
+                nullFallback
             );
         }
 
@@ -835,10 +842,15 @@ public static class Mapper {
 
         // If source is nullable (or reference) and null, map to default(target).
         if (sourceNullCheck != null) {
+            var nullFallback = CreatePropertyDefaultValueExpression(destProp);
+            if (nullFallback.Type != adaptedResult.Type && adaptedResult.Type.IsAssignableFrom(nullFallback.Type)) {
+                nullFallback = Expression.Convert(nullFallback, adaptedResult.Type);
+            }
+
             adaptedResult = Expression.Condition(
                 sourceNullCheck,
                 adaptedResult,
-                CreateDefaultValueExpression(destProp.PropertyType)
+                nullFallback
             );
         }
 
@@ -966,7 +978,7 @@ public static class Mapper {
         }
 
         if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
-            sourceNullCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+            sourceNullCheck = CreateHasValueCheck(sourceAccess);
         }
 
         return true;
@@ -1199,7 +1211,7 @@ public static class Mapper {
         if (sourceAccess.Type == mapSourceType) {
             // For reference/nullable values, keep null fallback behavior.
             if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
-                sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+                sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
             return true;
         }
@@ -1222,7 +1234,7 @@ public static class Mapper {
 
         if (mapSourceType.IsAssignableFrom(sourceAccess.Type)) {
             if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
-                sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+                sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
             adaptedSource = sourceAccess;
             return true;
@@ -1273,6 +1285,173 @@ public static class Mapper {
 
     private static bool IsInterfaceCollectionLikeType(Type type)
         => type.IsInterface && IsCollectionLikeType(type);
+
+    private static Expression CreateHasValueCheck(Expression valueExpression) {
+        var checkExpression = IsInterfaceCollectionLikeType(valueExpression.Type)
+            ? Expression.Convert(valueExpression, typeof(object))
+            : valueExpression;
+
+        return Expression.NotEqual(checkExpression, Expression.Constant(null, checkExpression.Type));
+    }
+
+    private static bool TryGetDefaultCollectionBindingForUnmappedDestination(
+        PropertyInfo destinationProperty,
+        out MemberAssignment binding
+    ) {
+        binding = null!;
+
+        if (!IsCollectionLikeType(destinationProperty.PropertyType)) {
+            return false;
+        }
+
+        binding = Expression.Bind(destinationProperty, CreatePropertyDefaultValueExpression(destinationProperty));
+        return true;
+    }
+
+    private static Expression CreatePropertyDefaultValueExpression(PropertyInfo property) {
+        if (IsCollectionLikeType(property.PropertyType)
+            && ShouldUseEmptyCollectionFallback(property)
+            && TryCreateEmptyCollectionExpression(property.PropertyType, out var emptyCollectionExpression)) {
+            return emptyCollectionExpression;
+        }
+
+        return CreateDefaultValueExpression(property.PropertyType);
+    }
+
+    private static bool ShouldUseEmptyCollectionFallback(PropertyInfo property)
+        => IsRequiredMember(property) || !IsPropertyDeclaredNullable(property);
+
+    private static bool IsPropertyDeclaredNullable(PropertyInfo property) {
+        if (property.PropertyType.IsValueType) {
+            return Nullable.GetUnderlyingType(property.PropertyType) != null;
+        }
+
+        var nullabilityContextType = Type.GetType("System.Reflection.NullabilityInfoContext");
+        if (nullabilityContextType != null) {
+            try {
+                var nullabilityContext = Activator.CreateInstance(nullabilityContextType);
+                var createMethod = nullabilityContextType.GetMethod("Create", [typeof(PropertyInfo)]);
+                var nullabilityInfo = createMethod?.Invoke(nullabilityContext, [property]);
+                var writeState = nullabilityInfo?.GetType().GetProperty("WriteState")?.GetValue(nullabilityInfo);
+                if (writeState != null) {
+                    var stateName = writeState.ToString();
+                    if (string.Equals(stateName, "Nullable", StringComparison.Ordinal)) {
+                        return true;
+                    }
+
+                    if (string.Equals(stateName, "NotNull", StringComparison.Ordinal)) {
+                        return false;
+                    }
+                }
+            } catch {
+            }
+        }
+
+        var propertyNullableFlag = TryGetNullableAttributeFlag(property.CustomAttributes);
+        if (propertyNullableFlag.HasValue) {
+            return propertyNullableFlag.Value == 2;
+        }
+
+        var contextNullableFlag = TryGetNullableContextFlag(property);
+        if (contextNullableFlag.HasValue) {
+            return contextNullableFlag.Value == 2;
+        }
+
+        return true;
+    }
+
+    private static byte? TryGetNullableAttributeFlag(IEnumerable<CustomAttributeData> attributes) {
+        foreach (var attribute in attributes) {
+            if (!string.Equals(attribute.AttributeType.FullName, "System.Runtime.CompilerServices.NullableAttribute", StringComparison.Ordinal)) {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Count == 1) {
+                var argument = attribute.ConstructorArguments[0];
+                if (argument.ArgumentType == typeof(byte)) {
+                    return (byte)argument.Value!;
+                }
+
+                if (argument.ArgumentType == typeof(byte[])
+                    && argument.Value is IReadOnlyCollection<CustomAttributeTypedArgument> values
+                    && values.Count > 0) {
+                    return (byte)values.First().Value!;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static byte? TryGetNullableContextFlag(PropertyInfo property) {
+        for (Type? currentType = property.DeclaringType; currentType != null; currentType = currentType.DeclaringType) {
+            var contextFlag = TryGetNullableContextFlag(currentType.CustomAttributes);
+            if (contextFlag.HasValue) {
+                return contextFlag;
+            }
+        }
+
+        return null;
+    }
+
+    private static byte? TryGetNullableContextFlag(IEnumerable<CustomAttributeData> attributes) {
+        foreach (var attribute in attributes) {
+            if (!string.Equals(attribute.AttributeType.FullName, "System.Runtime.CompilerServices.NullableContextAttribute", StringComparison.Ordinal)) {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Count == 1
+                && attribute.ConstructorArguments[0].ArgumentType == typeof(byte)) {
+                return (byte)attribute.ConstructorArguments[0].Value!;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryCreateEmptyCollectionExpression(Type type, out Expression expression) {
+        expression = null!;
+
+        if (!IsCollectionLikeType(type) || !TryGetEnumerableElementType(type, out var elementType)) {
+            return false;
+        }
+
+        if (type.IsArray) {
+            expression = Expression.NewArrayInit(elementType);
+            return true;
+        }
+
+        if (type.IsInterface && type.IsGenericType) {
+            var genericDefinition = type.GetGenericTypeDefinition();
+            if (genericDefinition == typeof(IEnumerable<>)
+                || genericDefinition == typeof(ICollection<>)
+                || genericDefinition == typeof(IList<>)
+                || genericDefinition == typeof(IReadOnlyCollection<>)
+                || genericDefinition == typeof(IReadOnlyList<>)) {
+                expression = Expression.New(typeof(List<>).MakeGenericType(elementType));
+                return true;
+            }
+        }
+
+        var parameterlessConstructor = type.GetConstructor(Type.EmptyTypes);
+        if (parameterlessConstructor != null) {
+            expression = Expression.New(parameterlessConstructor);
+            return true;
+        }
+
+        var enumerableConstructor = type.GetConstructor([typeof(IEnumerable<>).MakeGenericType(elementType)]);
+        if (enumerableConstructor != null) {
+            var emptyEnumerable = Expression.Call(
+                typeof(Enumerable),
+                nameof(Enumerable.Empty),
+                [elementType]
+            );
+            expression = Expression.New(enumerableConstructor, emptyEnumerable);
+            return true;
+        }
+
+        return false;
+    }
 
     private static Expression CreateDefaultValueExpression(Type type)
         => CanBeNull(type)
