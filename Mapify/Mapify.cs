@@ -603,16 +603,19 @@ public class Mapify : IMapify, IMapifyConfigurator {
             if (IsUseMapMarker(node.Method)) {
                 HasUseMapMarkers = true;
 
-                var argumentCount = node.Arguments.Count;
-                if (argumentCount == 1 || argumentCount == 2 && node.Arguments[0].Type == typeof(string)) {
+                var methodDefinition = node.Method.GetGenericMethodDefinition();
+                var parameters = methodDefinition.GetParameters();
+
+                if (parameters.Length == 1
+                    || (parameters.Length == 2 && parameters[0].ParameterType == typeof(string))) {
                     HasDepthlessUseMapMarkers = true;
                 }
 
-                if (argumentCount == 2 && node.Arguments[0].Type != typeof(string)) {
+                if (parameters.Length == 2 && parameters[1].ParameterType == typeof(int)) {
                     MaxExplicitDepth = Math.Max(MaxExplicitDepth, ExtractDepth(node.Arguments[1]));
                 }
 
-                if (argumentCount == 3) {
+                if (parameters.Length == 3 && parameters[2].ParameterType == typeof(int)) {
                     MaxExplicitDepth = Math.Max(MaxExplicitDepth, ExtractDepth(node.Arguments[2]));
                 }
             }

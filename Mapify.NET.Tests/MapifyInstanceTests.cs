@@ -32,6 +32,14 @@ public class MapifyInstanceTests {
         public string Name { get; set; } = string.Empty;
     }
 
+    private class ConstantStringSource {
+        public int Id { get; set; }
+    }
+
+    private class ConstantStringTarget {
+        public string Text { get; set; } = string.Empty;
+    }
+
     private class ChildSource {
         public int Number { get; set; }
     }
@@ -1097,6 +1105,32 @@ public class MapifyInstanceTests {
     }
 
     [Fact]
+    public void Constructor_ShouldSupportUseMapDepthOverload_WhenSourceTypeIsString() {
+        var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+        RegisterStringAppendMap(mapify);
+        RegisterStringSourceDepthMap(mapify, depth: 3);
+
+        var buildMethod = typeof(Mapify).GetMethod("BuildRegisteredMaps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        buildMethod.Invoke(mapify, null);
+
+        var mapped = mapify.Map<ConstantStringSource, ConstantStringTarget>(new ConstantStringSource { Id = 1 });
+
+        Assert.Equal("foo!", mapped.Text);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenUseMapDepthExceedsHardCap_ForStringSource() {
+        var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+        RegisterStringSourceDepthMap(mapify, depth: 11);
+
+        var buildMethod = typeof(Mapify).GetMethod("BuildRegisteredMaps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var tie = Assert.Throws<System.Reflection.TargetInvocationException>(() => buildMethod.Invoke(mapify, null));
+        var ex = Assert.IsType<InvalidOperationException>(tie.InnerException);
+
+        Assert.Contains("exceeds the configured hard cap 10", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Map_ToExisting_ShouldThrowForValueMappingInInstanceMapper() {
         var mapify = new Mapify(new ValueMapProfile());
         var source = new NameSource { Name = "Mapify" };
@@ -1252,6 +1286,44 @@ public class MapifyInstanceTests {
         var addPendingMap = typeof(Mapify)
             .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .MakeGenericMethod(typeof(RecursiveNodeDepthElevenSource), typeof(RecursiveNodeDepthElevenTarget));
+        addPendingMap.Invoke(mapify, [null, partial]);
+    }
+
+    private static void RegisterStringSourceDepthMap(Mapify mapify, int depth) {
+        var sourceParameter = Expression.Parameter(typeof(ConstantStringSource), "x");
+
+        var useMapMarker = typeof(MapifyProfile)
+            .GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            .Single(m => m.Name == "UseMap"
+                && m.IsGenericMethodDefinition
+                && m.GetParameters().Length == 2
+                && m.GetParameters()[1].ParameterType == typeof(int))
+            .MakeGenericMethod(typeof(string), typeof(string));
+
+        var useMapCall = Expression.Call(useMapMarker, Expression.Constant("foo"), Expression.Constant(depth));
+
+        var body = Expression.MemberInit(
+            Expression.New(typeof(ConstantStringTarget)),
+            Expression.Bind(
+                typeof(ConstantStringTarget).GetProperty(nameof(ConstantStringTarget.Text))!,
+                useMapCall
+            )
+        );
+
+        var partial = Expression.Lambda<Func<ConstantStringSource, ConstantStringTarget>>(body, sourceParameter);
+
+        var addPendingMap = typeof(Mapify)
+            .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(ConstantStringSource), typeof(ConstantStringTarget));
+        addPendingMap.Invoke(mapify, [null, partial]);
+    }
+
+    private static void RegisterStringAppendMap(Mapify mapify) {
+        Expression<Func<string, string>> partial = x => x + "!";
+
+        var addPendingMap = typeof(Mapify)
+            .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(string), typeof(string));
         addPendingMap.Invoke(mapify, [null, partial]);
     }
 

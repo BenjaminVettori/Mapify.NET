@@ -68,6 +68,34 @@ public class MapperDefaultValueBehaviorTests {
         Assert.Empty(mapped.Items);
     }
 
+    [Fact]
+    public void CreateMap_ShouldPreserveDerivedCtorInitializer_ForInheritedCollection_WhenSourcePropertyIsMissing() {
+        var map = Mapper.CreateMap<SourceWithoutItems, DerivedCtorInitializedCollectionTarget>();
+
+        var mapped = map.Map(new SourceWithoutItems { Value = 42 });
+
+        Assert.Equal(42, mapped.Value);
+        Assert.Equal([88], mapped.Items.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void ClearMappings_ShouldClearInitializedPropertyCache() {
+        var map = Mapper.CreateMap<SourceWithoutItems, DerivedCtorInitializedCollectionTarget>();
+        _ = map.Map(new SourceWithoutItems { Value = 1 });
+
+        var cacheField = typeof(Mapper).GetField("_initializedPropertyCache", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var cache = cacheField.GetValue(null)!;
+        var countProperty = cache.GetType().GetProperty("Count")!;
+
+        var countBefore = (int)countProperty.GetValue(cache)!;
+        Assert.True(countBefore > 0);
+
+        Mapper.ClearMappings();
+
+        var countAfter = (int)countProperty.GetValue(cache)!;
+        Assert.Equal(0, countAfter);
+    }
+
     private sealed class DefaultElementSource { public int Value { get; set; } }
     private sealed class DefaultElementTarget { public int Value { get; set; } }
 
@@ -85,5 +113,16 @@ public class MapperDefaultValueBehaviorTests {
     private sealed class NonNullableUninitializedCollectionTarget {
         public int Value { get; set; }
         public List<DefaultElementTarget> Items { get; set; } = null!;
+    }
+
+    private abstract class BaseCollectionTarget {
+        public int Value { get; set; }
+        public List<DefaultElementTarget> Items { get; set; } = null!;
+    }
+
+    private sealed class DerivedCtorInitializedCollectionTarget : BaseCollectionTarget {
+        public DerivedCtorInitializedCollectionTarget() {
+            Items = [new DefaultElementTarget { Value = 88 }];
+        }
     }
 }

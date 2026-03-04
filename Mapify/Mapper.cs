@@ -38,6 +38,7 @@ public static class Mapper {
         _compiledMapToNewCache.Clear();
         _compiledSpecificMapToExistingCache.Clear();
         _compiledSpecificMapToNewCache.Clear();
+        _initializedPropertyCache.Clear();
     }
 
     /// <summary>
@@ -76,7 +77,7 @@ public static class Mapper {
     /// </summary>
     private static readonly ConditionalWeakTable<LambdaExpression, HashSet<string>> _ignoredMembersByMap = new();
 
-    private static readonly ConcurrentDictionary<Tuple<Type, string>, bool> _initializedPropertyCache = new();
+    private static readonly ConcurrentDictionary<Tuple<Type, Type, string>, bool> _initializedPropertyCache = new();
 
     /// <summary>
     /// Creates a new mapping with the optional partial mapping expression and adds it to the mapping dictionary
@@ -353,7 +354,7 @@ public static class Mapper {
 
             // copy existing bindings from the partial expression
             foreach (var partialBinding in partialUpdated.Bindings.OfType<MemberAssignment>()) {
-                var binding = MapPartialBinding(partialBinding, existingMapResolver, out var isIgnored);
+                var binding = MapPartialBinding(partialBinding, typeof(TDestination), existingMapResolver, out var isIgnored);
                 if (isIgnored) {
                     ignoredBindings.Add(partialBinding.Member.Name);
                 }
@@ -386,7 +387,7 @@ public static class Mapper {
                 } else if (TryGetImplicitBinding(baseParam, sourceProp, destProp, out var implicitBinding)) {
                     allBindings.Add(implicitBinding);
                 }
-            } else if (TryGetDefaultCollectionBindingForUnmappedDestination(destProp, out var defaultCollectionBinding)) {
+            } else if (TryGetDefaultCollectionBindingForUnmappedDestination(destProp, typeof(TDestination), out var defaultCollectionBinding)) {
                 allBindings.Add(defaultCollectionBinding);
             }
         }
@@ -410,6 +411,7 @@ public static class Mapper {
     /// <returns></returns>
     private static MemberAssignment? MapPartialBinding(
         MemberAssignment partialBinding,
+        Type destinationType,
         Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
         out bool isIgnored
     ) {
@@ -417,7 +419,7 @@ public static class Mapper {
 
         var expr = partialBinding.Expression;
 
-        if (TryResolveIgnoreMarker(partialBinding, out var ignoredBinding)) {
+        if (TryResolveIgnoreMarker(partialBinding, destinationType, out var ignoredBinding)) {
             isIgnored = true;
             return ignoredBinding;
         }
@@ -449,6 +451,7 @@ public static class Mapper {
 
     private static bool TryResolveIgnoreMarker(
         MemberAssignment partialBinding,
+        Type destinationType,
         out MemberAssignment? mappedBinding
     ) {
         mappedBinding = null;
@@ -474,7 +477,7 @@ public static class Mapper {
             return true;
         }
 
-        if (IsPropertyInitializedOnFreshInstance(destProp)) {
+        if (IsPropertyInitializedOnFreshInstance(destProp, destinationType)) {
             return true;
         }
 
@@ -692,22 +695,20 @@ public static class Mapper {
         markerTargetType = genericArgs[1];
 
         var args = methodCall.Arguments;
-        if (args.Count == 1) {
+        var genericDefinition = methodCall.Method.GetGenericMethodDefinition();
+        var definitionGenericArgs = genericDefinition.GetGenericArguments();
+        var sourceGenericParameter = definitionGenericArgs[0];
+        var parameterTypes = genericDefinition.GetParameters().Select(parameter => parameter.ParameterType).ToArray();
+
+        if (parameterTypes.Length == 1 && parameterTypes[0] == sourceGenericParameter && args.Count == 1) {
             sourceAccess = args[0];
             return true;
         }
 
-        if (args.Count == 2) {
-            if (args[0] is ConstantExpression nameConstant && nameConstant.Value is string mapName) {
-                if (string.IsNullOrWhiteSpace(mapName)) {
-                    throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
-                }
-
-                markerMapName = mapName;
-                sourceAccess = args[1];
-                return true;
-            }
-
+        if (parameterTypes.Length == 2
+            && parameterTypes[0] == sourceGenericParameter
+            && parameterTypes[1] == typeof(int)
+            && args.Count == 2) {
             if (args[1] is not ConstantExpression depthConstant || depthConstant.Value is not int depth || depth <= 0) {
                 throw new InvalidOperationException($"{_useMapMarkerName} depth argument must be a constant positive integer.");
             }
@@ -716,7 +717,24 @@ public static class Mapper {
             return true;
         }
 
-        if (args.Count == 3) {
+        if (parameterTypes.Length == 2
+            && parameterTypes[0] == typeof(string)
+            && parameterTypes[1] == sourceGenericParameter
+            && args.Count == 2) {
+            if (args[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
+                throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
+            }
+
+            markerMapName = mapName;
+            sourceAccess = args[1];
+            return true;
+        }
+
+        if (parameterTypes.Length == 3
+            && parameterTypes[0] == typeof(string)
+            && parameterTypes[1] == sourceGenericParameter
+            && parameterTypes[2] == typeof(int)
+            && args.Count == 3) {
             if (args[0] is not ConstantExpression nameConstant || nameConstant.Value is not string mapName || string.IsNullOrWhiteSpace(mapName)) {
                 throw new InvalidOperationException($"{_useMapMarkerName} name argument must be a non-empty constant string.");
             }
@@ -1338,6 +1356,7 @@ public static class Mapper {
 
     private static bool TryGetDefaultCollectionBindingForUnmappedDestination(
         PropertyInfo destinationProperty,
+        Type destinationType,
         out MemberAssignment binding
     ) {
         binding = null!;
@@ -1346,7 +1365,7 @@ public static class Mapper {
             return false;
         }
 
-        if (IsPropertyInitializedOnFreshInstance(destinationProperty)) {
+        if (IsPropertyInitializedOnFreshInstance(destinationProperty, destinationType)) {
             return false;
         }
 
@@ -1354,15 +1373,15 @@ public static class Mapper {
         return true;
     }
 
-    private static bool IsPropertyInitializedOnFreshInstance(PropertyInfo property) {
-        if (property.DeclaringType == null || !property.CanRead) {
+    private static bool IsPropertyInitializedOnFreshInstance(PropertyInfo property, Type destinationType) {
+        if (!property.CanRead || property.DeclaringType == null) {
             return false;
         }
 
-        var cacheKey = Tuple.Create(property.DeclaringType, property.Name);
+        var cacheKey = Tuple.Create(destinationType, property.DeclaringType, property.Name);
         return _initializedPropertyCache.GetOrAdd(cacheKey, _ => {
             try {
-                var instance = Activator.CreateInstance(property.DeclaringType);
+                var instance = Activator.CreateInstance(destinationType);
                 if (instance == null) {
                     return false;
                 }
