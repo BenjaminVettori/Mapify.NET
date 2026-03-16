@@ -125,28 +125,16 @@ public static class Mapper {
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
     public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>() {
-        return GetMap<TSource, TTarget>(null);
-    }
-
-    /// <summary>
-    /// Gets the registered map expression for the source and target types and replaces runtime parameters.
-    /// Returns <c>null</c> when no map exists and default-map fallback is disabled.
-    /// </summary>
-    /// <typeparam name="TSource">The source type.</typeparam>
-    /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
-    /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
-    public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
         var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
         if (_converters.TryGetValue(key, out var existingConverter)) {
-            return ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
+            return (Expression<Func<TSource, TTarget>>)existingConverter;
         } else if (_globalUseDefaultMapIfTypeMapIsMissing) {
             if (_defaultMapCache.TryGetValue(key, out var map)) {
-                return ApplyParameters((Expression<Func<TSource, TTarget>>)map, parameters);
+                return (Expression<Func<TSource, TTarget>>)map;
             }
             var defaultMap = CreateMap<TSource, TTarget>();
             _defaultMapCache[key] = defaultMap;
-            return ApplyParameters(defaultMap, parameters);
+            return (Expression<Func<TSource, TTarget>>)defaultMap;
         }
         return null;
     }
@@ -159,19 +147,7 @@ public static class Mapper {
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
     public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>() {
-        return GetRequiredMap<TSource, TTarget>(null);
-    }
-
-    /// <summary>
-    /// Gets the required map expression for the source and target types and replaces runtime parameters.
-    /// </summary>
-    /// <typeparam name="TSource">The source type.</typeparam>
-    /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
-    /// <returns>The required mapping expression.</returns>
-    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
-        var map = GetMap<TSource, TTarget>(parameters);
+        var map = GetMap<TSource, TTarget>();
         if (map != null) {
             return map;
         }
@@ -274,7 +250,7 @@ public static class Mapper {
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);
     }
-
+    
     /// <summary>
     /// Compiles a given mapping expression to an action which maps the values to an existing object instead.
     /// The mapping expression must contain an initializer (x => new TTarget { ... }).

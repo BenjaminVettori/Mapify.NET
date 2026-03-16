@@ -345,6 +345,22 @@ public class MapifyInstanceTests {
         public int Value { get; set; }
     }
 
+    private class ParameterizedNullableTarget {
+        public int? Value { get; set; }
+    }
+
+    private class ParameterizedEnumTarget {
+        public TargetStatus Status { get; set; }
+    }
+
+    private class ParameterizedInvalidNameSource {
+        public int Value { get; set; }
+    }
+
+    private class ParameterizedInvalidNameTarget {
+        public int Value { get; set; }
+    }
+
     private class RecursiveNodeSource {
         public int Value { get; set; }
         public RecursiveNodeSource? Next { get; set; }
@@ -804,6 +820,38 @@ public class MapifyInstanceTests {
         protected override void Configure() {
             CreateMap<ParameterizedSource, ParameterizedTarget>(x => new ParameterizedTarget {
                 Value = x.Value + Parameter<int>("offset")
+            });
+        }
+    }
+
+    private class ParameterizedNamedProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ParameterizedSource, ParameterizedTarget>("NamedOffset", x => new ParameterizedTarget {
+                Value = x.Value + Parameter<int>("offset")
+            });
+        }
+    }
+
+    private class ParameterizedNullableProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ParameterizedSource, ParameterizedNullableTarget>(x => new ParameterizedNullableTarget {
+                Value = Parameter<int?>("offset")
+            });
+        }
+    }
+
+    private class ParameterizedEnumProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ParameterizedSource, ParameterizedEnumTarget>(x => new ParameterizedEnumTarget {
+                Status = Parameter<TargetStatus>("status")
+            });
+        }
+    }
+
+    private class ParameterizedInvalidNameProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ParameterizedInvalidNameSource, ParameterizedInvalidNameTarget>(x => new ParameterizedInvalidNameTarget {
+                Value = Parameter<int>(" ")
             });
         }
     }
@@ -1631,6 +1679,158 @@ public class MapifyInstanceTests {
 
         var ex = Assert.Throws<KeyNotFoundException>(() => mapify.GetRequiredMap<ParameterizedSource, ParameterizedTarget>());
         Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var mapped = mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 3 },
+            new Dictionary<string, object?> { ["offset"] = 5 }
+        );
+
+        Assert.Equal(8, mapped.Value);
+    }
+
+    [Fact]
+    public void Map_ToExisting_Default_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedProfile());
+        var target = new ParameterizedTarget();
+
+        mapify.Map(
+            new ParameterizedSource { Value = 4 },
+            target,
+            new Dictionary<string, object?> { ["offset"] = 6 }
+        );
+
+        Assert.Equal(10, target.Value);
+    }
+
+    [Fact]
+    public void Map_Named_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedNamedProfile());
+
+        var mapped = mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 7 },
+            "NamedOffset",
+            new Dictionary<string, object?> { ["offset"] = 2 }
+        );
+
+        Assert.Equal(9, mapped.Value);
+    }
+
+    [Fact]
+    public void Map_ToExisting_Named_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedNamedProfile());
+        var target = new ParameterizedTarget();
+
+        mapify.Map(
+            new ParameterizedSource { Value = 9 },
+            target,
+            "NamedOffset",
+            new Dictionary<string, object?> { ["offset"] = 4 }
+        );
+
+        Assert.Equal(13, target.Value);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldThrow_WhenParameterIsMissing() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var ex = Assert.Throws<ArgumentException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 1 },
+            new Dictionary<string, object?>()
+        ));
+
+        Assert.Contains("At least one runtime parameter", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Map_Named_ShouldThrow_WhenParameterIsMissing() {
+        var mapify = new Mapify(new ParameterizedNamedProfile());
+
+        var ex = Assert.Throws<ArgumentException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 1 },
+            "NamedOffset",
+            new Dictionary<string, object?>()
+        ));
+
+        Assert.Contains("At least one runtime parameter", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldConvertStringParameterToInt_WhenCompatible() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var mapped = mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 3 },
+            new Dictionary<string, object?> { ["offset"] = "5" }
+        );
+
+        Assert.Equal(8, mapped.Value);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldParseEnumParameterFromString_CaseInsensitive() {
+        var mapify = new Mapify(new ParameterizedEnumProfile());
+
+        var mapped = mapify.Map<ParameterizedSource, ParameterizedEnumTarget>(
+            new ParameterizedSource { Value = 0 },
+            new Dictionary<string, object?> { ["status"] = "enabled" }
+        );
+
+        Assert.Equal(TargetStatus.Enabled, mapped.Status);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldAllowNull_WhenParameterTypeIsNullable() {
+        var mapify = new Mapify(new ParameterizedNullableProfile());
+
+        var mapped = mapify.Map<ParameterizedSource, ParameterizedNullableTarget>(
+            new ParameterizedSource { Value = 0 },
+            new Dictionary<string, object?> { ["offset"] = null }
+        );
+
+        Assert.Null(mapped.Value);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldThrow_WhenNullProvidedForNonNullableParameterType() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var ex = Assert.Throws<InvalidOperationException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 0 },
+            new Dictionary<string, object?> { ["offset"] = null }
+        ));
+
+        Assert.Contains("cannot be null", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldThrow_WhenParameterCannotBeConvertedToRequiredType() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var ex = Assert.Throws<InvalidOperationException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 0 },
+            new Dictionary<string, object?> { ["offset"] = "not-a-number" }
+        ));
+
+        Assert.Contains("cannot be converted", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldThrow_WhenParameterMarkerNameIsWhitespace() {
+        var mapify = new Mapify(new ParameterizedInvalidNameProfile());
+
+        var ex = Assert.Throws<InvalidOperationException>(() => mapify.Map<ParameterizedInvalidNameSource, ParameterizedInvalidNameTarget>(
+            new ParameterizedInvalidNameSource { Value = 0 },
+            new Dictionary<string, object?> { ["offset"] = 1 }
+        ));
+
+        Assert.Contains("non-empty constant string", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

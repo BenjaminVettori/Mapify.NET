@@ -95,7 +95,7 @@ public class MapifyDiExtensionsTests : IClassFixture<MapifyDiExtensionsTests.Map
         services.AddMapify(ServiceLifetime.Singleton);
 
         // Simulate another project registering additional profiles later
-        services.AddMapifyProfiles(typeof(DiProfileB).Assembly);
+        services.AddMapifyProfile<DiProfileB>();
         services.AddMapify(ServiceLifetime.Singleton);
 
         Assert.Single(services, x => x.ServiceType == typeof(IMapify));

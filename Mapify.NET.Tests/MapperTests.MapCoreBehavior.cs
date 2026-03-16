@@ -156,22 +156,6 @@ public partial class MapperTests {
     }
 
     [Fact]
-    public void ProjectTo_IQueryable_WithParameters_ShouldResolveParameterMarkerFromStaticMap() {
-        Mapper.AddMap(ParameterMarkerProfile.CreateParameterizedMap());
-
-        var projected = new[] {
-                new A2 { Prop = 1 },
-                new A2 { Prop = 2 }
-            }
-            .AsQueryable()
-            .ProjectTo<B2>(new Dictionary<string, object?> { ["offset"] = 3 })
-            .Select(x => x.Prop)
-            .ToArray();
-
-        Assert.Equal([4, 5], projected);
-    }
-
-    [Fact]
     public void ProjectTo_IQueryable_ShouldApplyRegisteredMap_AndAllowFurtherComposition() {
         Mapper.AddMap<A2, B2>(x => new B2 { Prop = x.Prop + 1 });
 

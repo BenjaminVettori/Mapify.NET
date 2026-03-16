@@ -21,16 +21,6 @@ public partial class MapperTests {
             };
     }
 
-    private sealed class ParameterMarkerProfile : MapifyProfile {
-        protected override void Configure() {
-        }
-
-        public static Expression<Func<A2, B2>> CreateParameterizedMap()
-            => x => new B2 {
-                Prop = x.Prop + Parameter<int>("offset")
-            };
-    }
-
     private static Expression<Func<TSource, TTarget>> CreateMapWithResolver<TSource, TTarget>(
         Expression<Func<TSource, TTarget>>? partial,
         Func<Type, Type, string?, LambdaExpression?>? resolver

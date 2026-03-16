@@ -42,24 +42,6 @@ public partial class MapperTests {
     }
 
     [Fact]
-    public void GetRequiredMap_WithParameters_ShouldResolveParameterMarkerFromStaticMap() {
-        Mapper.AddMap(ParameterMarkerProfile.CreateParameterizedMap());
-
-        var map = Mapper.GetRequiredMap<A2, B2>(new Dictionary<string, object?> { ["offset"] = 7 });
-        var mapped = map.Compile().Invoke(new A2 { Prop = 2 });
-
-        Assert.Equal(9, mapped.Prop);
-    }
-
-    [Fact]
-    public void GetRequiredMap_WithParameters_ShouldThrow_WhenParameterMarkerValueIsMissing() {
-        Mapper.AddMap(ParameterMarkerProfile.CreateParameterizedMap());
-
-        var ex = Assert.Throws<KeyNotFoundException>(() => Mapper.GetRequiredMap<A2, B2>());
-        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void GetMap_ShouldRequireExactTypes_AndNotReturnNullableOrElementFallbackMaps() {
         Mapper.UseDefaultMapIfTypeMapIsMissing(false);
         Mapper.AddMap<PrecedenceNumberSource, PrecedenceNumberTarget>(x => new PrecedenceNumberTarget { Value = x.Value + 1 });

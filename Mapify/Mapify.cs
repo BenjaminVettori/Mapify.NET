@@ -27,6 +27,18 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
     private readonly Dictionary<MapKey, Delegate> _compiledMapToNewCache = [];
 
+    private static readonly IReadOnlyDictionary<string, object?> _emptyParameters = new Dictionary<string, object?>();
+
+    private static void ValidateRuntimeParameters(IReadOnlyDictionary<string, object?> parameters) {
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (parameters.Count == 0 && !ReferenceEquals(parameters, _emptyParameters)) {
+            throw new ArgumentException("At least one runtime parameter must be provided when using a parameterized overload.", nameof(parameters));
+        }
+    }
+
     /// <summary>
     /// Creates a mapper instance and applies the provided profiles.
     /// </summary>
@@ -323,7 +335,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The mapping expression, or <c>null</c> if not found.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
     public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name) {
-        return GetMap<TSource, TTarget>(name, null);
+        return GetMap<TSource, TTarget>(name, _emptyParameters);
     }
 
     /// <summary>
@@ -336,10 +348,12 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
-    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?> parameters) {
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
+
+        ValidateRuntimeParameters(parameters);
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
         if (_converters.TryGetValue(key, out var existingConverter)) {
@@ -358,7 +372,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The required named mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
     public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name) {
-        return GetRequiredMap<TSource, TTarget>(name, null);
+        return GetRequiredMap<TSource, TTarget>(name, _emptyParameters);
     }
 
     /// <summary>
@@ -370,7 +384,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The required named mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
-    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?> parameters) {
         var map = GetMap<TSource, TTarget>(name, parameters);
         if (map != null) {
             return map;
@@ -387,7 +401,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
     public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>() {
-        return GetMap<TSource, TTarget>((IReadOnlyDictionary<string, object?>?)null);
+        return GetMap<TSource, TTarget>(_emptyParameters);
     }
 
     /// <summary>
@@ -398,7 +412,9 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
-    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters) {
+        ValidateRuntimeParameters(parameters);
+
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_converters.TryGetValue(key, out var existingConverter)) {
             return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
@@ -426,7 +442,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
     public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>() {
-        return GetRequiredMap<TSource, TTarget>((IReadOnlyDictionary<string, object?>?)null);
+        return GetRequiredMap<TSource, TTarget>(_emptyParameters);
     }
 
     /// <summary>
@@ -437,7 +453,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters) {
         var map = GetMap<TSource, TTarget>(parameters);
         if (map != null) {
             return map;
@@ -479,6 +495,34 @@ public class Mapify : IMapify, IMapifyConfigurator {
     }
 
     /// <summary>
+    /// Maps values from the source object to an existing target object using a named map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="target">The target object to update.</param>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
+    /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
+    public void Map<TSource, TTarget>(TSource source, TTarget target, string name, IReadOnlyDictionary<string, object?> parameters) {
+        if (string.IsNullOrWhiteSpace(name)) {
+            throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        ValidateRuntimeParameters(parameters);
+
+        var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
+
+        if (expression.Body is not MemberInitExpression) {
+            throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, name, parameters) instead.");
+        }
+
+        var compiled = Mapper.CompileMapper(expression);
+        compiled.Invoke(source, target);
+    }
+
+    /// <summary>
     /// Maps values from the source object to an existing target object using the default map.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
@@ -502,6 +546,29 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
         var compiled = Mapper.CompileMapper(expression);
         _compiledMapToExistingCache[key] = compiled;
+        compiled.Invoke(source, target);
+    }
+
+    /// <summary>
+    /// Maps values from the source object to an existing target object using the default map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="target">The target object to update.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
+    /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
+    public void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?> parameters) {
+        ValidateRuntimeParameters(parameters);
+
+        var expression = GetRequiredMap<TSource, TTarget>(parameters);
+
+        if (expression.Body is not MemberInitExpression) {
+            throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, parameters) instead.");
+        }
+
+        var compiled = Mapper.CompileMapper(expression);
         compiled.Invoke(source, target);
     }
 
@@ -531,6 +598,28 @@ public class Mapify : IMapify, IMapifyConfigurator {
     }
 
     /// <summary>
+    /// Maps the source object to a new target object using a named map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>A new mapped target object.</returns>
+    /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
+    public TTarget Map<TSource, TTarget>(TSource source, string name, IReadOnlyDictionary<string, object?> parameters) {
+        if (string.IsNullOrWhiteSpace(name)) {
+            throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        ValidateRuntimeParameters(parameters);
+
+        var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
+        var compiled = expression.Compile();
+        return compiled.Invoke(source);
+    }
+
+    /// <summary>
     /// Maps the source object to a new target object using the default map.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
@@ -547,6 +636,23 @@ public class Mapify : IMapify, IMapifyConfigurator {
         var expression = GetRequiredMap<TSource, TTarget>();
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
+        return compiled.Invoke(source);
+    }
+
+    /// <summary>
+    /// Maps the source object to a new target object using the default map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>A new mapped target object.</returns>
+    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
+    public TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?> parameters) {
+        ValidateRuntimeParameters(parameters);
+
+        var expression = GetRequiredMap<TSource, TTarget>(parameters);
+        var compiled = expression.Compile();
         return compiled.Invoke(source);
     }
 

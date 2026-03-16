@@ -25,7 +25,7 @@ internal sealed class ParameterMarkerReplaceVisitor(IReadOnlyDictionary<string, 
         }
 
         if (_parameters == null || !_parameters.TryGetValue(parameterName, out var parameterValue)) {
-            throw new KeyNotFoundException($"Missing mapping parameter '{parameterName}'. Provide this parameter when calling GetMap/GetRequiredMap/ProjectTo.");
+            throw new KeyNotFoundException($"Missing mapping parameter '{parameterName}'. Provide this parameter when calling GetMap/GetRequiredMap/Map/ProjectTo.");
         }
 
         var targetType = node.Method.GetGenericArguments()[0];

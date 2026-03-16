@@ -238,16 +238,9 @@ mapper.Map(person, existing, "SomeNamedMap");
 
 ### 4. Use the instance mapper with Entity Framework (`IQueryable`)
 
-`IMapify.GetMap<TSource, TTarget>()` returns the expression for projections, or `null` if missing (and default-map fallback is disabled).
-Use `IMapify.GetRequiredMap<TSource, TTarget>()` when missing maps should throw.
+`IMapify.GetMap<TSource, TTarget>()` returns the expression for projections (or `null` when missing). Use `IMapify.GetRequiredMap<TSource, TTarget>()` when a missing map should throw.
 
-The static `Mapper` API follows the same pattern:
-
-- `Mapper.GetMap<TSource, TTarget>()` may return `null`
-- `Mapper.GetRequiredMap<TSource, TTarget>()` throws when missing
-
-For convenience, you can also call `ProjectTo<TTarget>()` directly on an `IQueryable`.
-Use the overload with `IMapify` to resolve instance-based profile maps:
+To project with EF/EF Core using instance-based profiles, pass the mapper to `ProjectTo<TTarget>()`:
 
 ```csharp
 var people = await _dbContext.Persons
@@ -366,6 +359,56 @@ CreateMap<Person, PersonDto>("Masked", x => new PersonDto {
     Addresses = x.Addresses.ProjectTo<AddressDto>("Postal").ToArray()
 });
 ```
+
+### 5. Runtime Parameters (instance mapper)
+
+Runtime parameters are supported by the **instance mapper** (`IMapify`) and work in both:
+
+- in-memory mapping (`Map(...)`)
+- queryable projection (`ProjectTo(..., mapify, parameters)`)
+
+Use `Parameter<T>(string name)` inside a profile map:
+
+```csharp
+public class MyProfile : MapifyProfile {
+    protected override void Configure() {
+        CreateMap<Request, Result>(r => new Result {
+            ScoreCategory = r.Score >= Parameter<int>("minScore") ? "Pass" : "Fail"
+        });
+    }
+}
+```
+
+Provide parameter values at execution time via `IMapify`:
+
+- `GetMap<TSource, TTarget>(parameters)` / `GetRequiredMap<TSource, TTarget>(parameters)`
+- `Map<TSource, TTarget>(source, parameters)`
+- `Map<TSource, TTarget>(source, target, parameters)`
+- `Map<TSource, TTarget>(source, name, parameters)`
+- `Map<TSource, TTarget>(source, target, name, parameters)`
+- `ProjectTo<TTarget>(mapify, parameters)` and named overloads
+
+Example:
+
+```csharp
+var parameters = new Dictionary<string, object?> { ["minScore"] = 50 };
+
+var expr = mapify.GetRequiredMap<Request, Result>(parameters);
+var resultFromExpr = expr.Compile().Invoke(request);
+
+var result = mapify.Map<Request, Result>(request, parameters);
+
+var existing = new Result();
+mapify.Map(request, existing, parameters);
+
+var projected = dbContext.Requests
+    .ProjectTo<Result>(mapify, parameters)
+    .ToArray();
+```
+
+The static `Mapper` API does not provide parameterized `Map` / `GetMap` / `GetRequiredMap` / `ProjectTo` overloads.
+
+Notes: parameter names are matched by key and values must be convertible to the `T` used in `Parameter<T>(name)`.
 
 ## Detailed Functionality 📚
 
@@ -552,6 +595,26 @@ Mapper.CreateAndAddMap<Person, PersonDto>(p => new PersonDto { ... });
 // Use the global map anywhere
 var dto = Mapper.Map<Person, PersonDto>(person);
 ```
+
+### Mapping to existing instances (instance + static)
+
+`Map(source, target)` updates a provided target instance in-place only when the selected map expression is an object initializer (`MemberInit`).
+
+```csharp
+CreateMap<Person, PersonDto>(p => new PersonDto { Name = p.FirstName });
+
+// instance mapper
+var dto1 = new PersonDto();
+mapper.Map(person, dto1);
+
+// static mapper
+var dto2 = new PersonDto();
+Mapper.Map(person, dto2);
+```
+
+Implementation note: Mapify converts initializer bindings into assignments (for example `target.Name = ...`) and compiles them as `Action<TSource, TTarget>`. If the map returns a value directly (for example `CreateMap<User, string>(u => "User" + u.Id)`), `Map(source, target)` throws `NotSupportedException`.
+
+For value mappings, use `Map(source)` and assign the returned value.
 
 ### Value Mappings (non-initializer)
 
