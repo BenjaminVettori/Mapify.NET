@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Reflection;
 
 namespace Mapify.NET.Tests;
 
@@ -7,6 +8,17 @@ public class MapifyProjectToExtensionsTests {
     public MapifyProjectToExtensionsTests() {
         Mapper.UseDefaultMapIfTypeMapIsMissing(false);
         Mapper.ClearMappings();
+    }
+
+    private static TException AssertThrowsUnwrapped<TException>(Action action)
+        where TException : Exception {
+        try {
+            action();
+        } catch (TargetInvocationException ex) when (ex.InnerException is TException inner) {
+            return inner;
+        }
+
+        return Assert.Throws<TException>(action);
     }
     
     [Fact]
@@ -47,6 +59,91 @@ public class MapifyProjectToExtensionsTests {
             .Single();
 
         Assert.Equal(10, projected.Value);
+    }
+
+    [Fact]
+    public void ProjectTo_IEnumerable_InstanceWithParameters_ShouldConvertStringParameterToInt() {
+        var mapify = new Mapify([new EnumerableProjectWithParameterProfile()]);
+        IEnumerable source = new[] {
+            new ProjectSourceWithParameter { Value = 4 }
+        };
+
+        var projected = source
+            .ProjectTo<ProjectTargetWithParameter>(mapify, new Dictionary<string, object?> { ["offset"] = "6" })
+            .Single();
+
+        Assert.Equal(10, projected.Value);
+    }
+
+    [Fact]
+    public void ProjectTo_IQueryable_InstanceWithParameters_ShouldParseEnumParameterFromString_CaseInsensitive() {
+        var mapify = new Mapify([new EnumerableProjectEnumParameterProfile()]);
+        IQueryable source = new[] {
+            new ProjectSourceForEnumParameter { Value = 1 }
+        }.AsQueryable();
+
+        var projected = source
+            .ProjectTo<ProjectTargetForEnumParameter>(mapify, new Dictionary<string, object?> { ["status"] = "enabled" })
+            .Single();
+
+        Assert.Equal(ProjectTargetStatus.Enabled, projected.Status);
+    }
+
+    [Fact]
+    public void ProjectTo_IQueryable_InstanceWithParameters_ShouldAllowNullForNullableParameterType() {
+        var mapify = new Mapify([new EnumerableProjectNullableParameterProfile()]);
+        IQueryable source = new[] {
+            new ProjectSourceForNullableParameter { Value = 1 }
+        }.AsQueryable();
+
+        var projected = source
+            .ProjectTo<ProjectTargetForNullableParameter>(mapify, new Dictionary<string, object?> { ["offset"] = null })
+            .Single();
+
+        Assert.Null(projected.Value);
+    }
+
+    [Fact]
+    public void ProjectTo_IQueryable_InstanceWithParameters_ShouldThrowWhenNullProvidedForNonNullableParameterType() {
+        var mapify = new Mapify([new EnumerableProjectWithParameterProfile()]);
+        IQueryable source = new[] {
+            new ProjectSourceWithParameter { Value = 4 }
+        }.AsQueryable();
+
+        var ex = AssertThrowsUnwrapped<InvalidOperationException>(() => source
+            .ProjectTo<ProjectTargetWithParameter>(mapify, new Dictionary<string, object?> { ["offset"] = null })
+            .Single());
+
+        Assert.Contains("cannot be null", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProjectTo_IEnumerable_InstanceWithParameters_ShouldThrowWhenParameterCannotBeConverted() {
+        var mapify = new Mapify([new EnumerableProjectWithParameterProfile()]);
+        IEnumerable source = new[] {
+            new ProjectSourceWithParameter { Value = 4 }
+        };
+
+        var ex = AssertThrowsUnwrapped<InvalidOperationException>(() => source
+            .ProjectTo<ProjectTargetWithParameter>(mapify, new Dictionary<string, object?> { ["offset"] = "not-a-number" })
+            .Single());
+
+        Assert.Contains("cannot be converted", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProjectTo_IEnumerable_InstanceWithParameters_ShouldThrowWhenParameterMarkerNameIsWhitespace() {
+        var mapify = new Mapify([new EnumerableProjectInvalidParameterNameProfile()]);
+        IEnumerable source = new[] {
+            new ProjectSourceInvalidParameterName { Value = 4 }
+        };
+
+        var ex = AssertThrowsUnwrapped<InvalidOperationException>(() => source
+            .ProjectTo<ProjectTargetInvalidParameterName>(mapify, new Dictionary<string, object?> { ["offset"] = 1 })
+            .Single());
+
+        Assert.Contains("non-empty constant string", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -237,6 +334,30 @@ public class MapifyProjectToExtensionsTests {
         }
     }
 
+    private sealed class EnumerableProjectEnumParameterProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ProjectSourceForEnumParameter, ProjectTargetForEnumParameter>(x => new ProjectTargetForEnumParameter {
+                Status = Parameter<ProjectTargetStatus>("status")
+            });
+        }
+    }
+
+    private sealed class EnumerableProjectNullableParameterProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ProjectSourceForNullableParameter, ProjectTargetForNullableParameter>(x => new ProjectTargetForNullableParameter {
+                Value = Parameter<int?>("offset")
+            });
+        }
+    }
+
+    private sealed class EnumerableProjectInvalidParameterNameProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ProjectSourceInvalidParameterName, ProjectTargetInvalidParameterName>(x => new ProjectTargetInvalidParameterName {
+                Value = Parameter<int>(" ")
+            });
+        }
+    }
+
     private sealed class ProjectSource {
         public int Value { get; set; }
     }
@@ -250,6 +371,35 @@ public class MapifyProjectToExtensionsTests {
     }
 
     private sealed class ProjectTargetWithParameter {
+        public int Value { get; set; }
+    }
+
+    private enum ProjectTargetStatus {
+        Disabled = 0,
+        Enabled = 1
+    }
+
+    private sealed class ProjectSourceForEnumParameter {
+        public int Value { get; set; }
+    }
+
+    private sealed class ProjectTargetForEnumParameter {
+        public ProjectTargetStatus Status { get; set; }
+    }
+
+    private sealed class ProjectSourceForNullableParameter {
+        public int Value { get; set; }
+    }
+
+    private sealed class ProjectTargetForNullableParameter {
+        public int? Value { get; set; }
+    }
+
+    private sealed class ProjectSourceInvalidParameterName {
+        public int Value { get; set; }
+    }
+
+    private sealed class ProjectTargetInvalidParameterName {
         public int Value { get; set; }
     }
 }
