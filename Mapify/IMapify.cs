@@ -28,7 +28,7 @@ public interface IMapify {
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
-    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters);
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters);
 
     /// <summary>
     /// Gets the default map expression for the source and target types, throwing if none is available.
@@ -47,7 +47,7 @@ public interface IMapify {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters);
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters);
 
     /// <summary>
     /// Gets the named map expression for the source and target types.
@@ -70,7 +70,7 @@ public interface IMapify {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
-    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters);
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?> parameters);
 
     /// <summary>
     /// Gets the named map expression for the source and target types, throwing if it is missing.
@@ -91,7 +91,7 @@ public interface IMapify {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The required named mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
-    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters);
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?> parameters);
 
     /// <summary>
     /// Maps values from the source object to an existing target object using the default map.
@@ -139,7 +139,7 @@ public interface IMapify {
     /// <param name="source">The source object.</param>
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>A new mapped target object.</returns>
-    TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?>? parameters);
+    TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?> parameters);
 
     /// <summary>
     /// Maps the source object to a new target object using a named map and runtime parameters.
@@ -150,7 +150,7 @@ public interface IMapify {
     /// <param name="name">The map name.</param>
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>A new mapped target object.</returns>
-    TTarget Map<TSource, TTarget>(TSource source, string name, IReadOnlyDictionary<string, object?>? parameters);
+    TTarget Map<TSource, TTarget>(TSource source, string name, IReadOnlyDictionary<string, object?> parameters);
 
     /// <summary>
     /// Maps values from the source object to an existing target object using the default map and runtime parameters.
@@ -160,7 +160,7 @@ public interface IMapify {
     /// <param name="source">The source object.</param>
     /// <param name="target">The target object to update.</param>
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
-    void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?>? parameters);
+    void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?> parameters);
 
     /// <summary>
     /// Maps values from the source object to an existing target object using a named map and runtime parameters.
@@ -171,5 +171,5 @@ public interface IMapify {
     /// <param name="target">The target object to update.</param>
     /// <param name="name">The map name.</param>
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
-    void Map<TSource, TTarget>(TSource source, TTarget target, string name, IReadOnlyDictionary<string, object?>? parameters);
+    void Map<TSource, TTarget>(TSource source, TTarget target, string name, IReadOnlyDictionary<string, object?> parameters);
 }

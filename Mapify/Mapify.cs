@@ -27,6 +27,8 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
     private readonly Dictionary<MapKey, Delegate> _compiledMapToNewCache = [];
 
+    private static readonly IReadOnlyDictionary<string, object?> _emptyParameters = new Dictionary<string, object?>();
+
     /// <summary>
     /// Creates a mapper instance and applies the provided profiles.
     /// </summary>
@@ -323,7 +325,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The mapping expression, or <c>null</c> if not found.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
     public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name) {
-        return GetMap<TSource, TTarget>(name, null);
+        return GetMap<TSource, TTarget>(name, _emptyParameters);
     }
 
     /// <summary>
@@ -336,9 +338,13 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
-    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?> parameters) {
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
         }
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
@@ -358,7 +364,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The required named mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
     public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name) {
-        return GetRequiredMap<TSource, TTarget>(name, null);
+        return GetRequiredMap<TSource, TTarget>(name, _emptyParameters);
     }
 
     /// <summary>
@@ -370,7 +376,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The required named mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
-    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(string name, IReadOnlyDictionary<string, object?> parameters) {
         var map = GetMap<TSource, TTarget>(name, parameters);
         if (map != null) {
             return map;
@@ -387,7 +393,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
     public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>() {
-        return GetMap<TSource, TTarget>((IReadOnlyDictionary<string, object?>?)null);
+        return GetMap<TSource, TTarget>(_emptyParameters);
     }
 
     /// <summary>
@@ -398,7 +404,11 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <typeparam name="TTarget">The target type.</typeparam>
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
-    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters) {
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_converters.TryGetValue(key, out var existingConverter)) {
             return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
@@ -426,7 +436,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
     public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>() {
-        return GetRequiredMap<TSource, TTarget>((IReadOnlyDictionary<string, object?>?)null);
+        return GetRequiredMap<TSource, TTarget>(_emptyParameters);
     }
 
     /// <summary>
@@ -437,7 +447,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The required mapping expression.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?>? parameters) {
+    public Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters) {
         var map = GetMap<TSource, TTarget>(parameters);
         if (map != null) {
             return map;
@@ -489,9 +499,13 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
     /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
-    public void Map<TSource, TTarget>(TSource source, TTarget target, string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public void Map<TSource, TTarget>(TSource source, TTarget target, string name, IReadOnlyDictionary<string, object?> parameters) {
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
         }
 
         var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
@@ -541,7 +555,11 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
     /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
-    public void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?>? parameters) {
+    public void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?> parameters) {
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
         var expression = GetRequiredMap<TSource, TTarget>(parameters);
 
         if (expression.Body is not MemberInitExpression) {
@@ -587,9 +605,13 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>A new mapped target object.</returns>
     /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
-    public TTarget Map<TSource, TTarget>(TSource source, string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public TTarget Map<TSource, TTarget>(TSource source, string name, IReadOnlyDictionary<string, object?> parameters) {
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
         }
 
         var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
@@ -626,7 +648,11 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>A new mapped target object.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?>? parameters) {
+    public TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?> parameters) {
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
         var expression = GetRequiredMap<TSource, TTarget>(parameters);
         var compiled = expression.Compile();
         return compiled.Invoke(source);

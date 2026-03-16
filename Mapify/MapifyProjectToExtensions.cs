@@ -55,13 +55,17 @@ public static class MapifyProjectToExtensions {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>A projected query of <typeparamref name="TTarget"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="mapify"/> is null.</exception>
-    public static IQueryable<TTarget> ProjectTo<TTarget>(this IQueryable source, IMapify mapify, IReadOnlyDictionary<string, object?>? parameters) {
+    public static IQueryable<TTarget> ProjectTo<TTarget>(this IQueryable source, IMapify mapify, IReadOnlyDictionary<string, object?> parameters) {
         if (source == null) {
             throw new ArgumentNullException(nameof(source));
         }
 
         if (mapify == null) {
             throw new ArgumentNullException(nameof(mapify));
+        }
+
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
         }
 
         var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify, parameters);
@@ -106,7 +110,7 @@ public static class MapifyProjectToExtensions {
     /// <returns>A projected query of <typeparamref name="TTarget"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="mapify"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
-    public static IQueryable<TTarget> ProjectTo<TTarget>(this IQueryable source, IMapify mapify, string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public static IQueryable<TTarget> ProjectTo<TTarget>(this IQueryable source, IMapify mapify, string name, IReadOnlyDictionary<string, object?> parameters) {
         if (source == null) {
             throw new ArgumentNullException(nameof(source));
         }
@@ -117,6 +121,10 @@ public static class MapifyProjectToExtensions {
 
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
         }
 
         var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify, name, parameters);
@@ -191,13 +199,17 @@ public static class MapifyProjectToExtensions {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>A projected sequence of <typeparamref name="TTarget"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="mapify"/> is null.</exception>
-    public static IEnumerable<TTarget> ProjectTo<TTarget>(this IEnumerable source, IMapify mapify, IReadOnlyDictionary<string, object?>? parameters) {
+    public static IEnumerable<TTarget> ProjectTo<TTarget>(this IEnumerable source, IMapify mapify, IReadOnlyDictionary<string, object?> parameters) {
         if (source == null) {
             throw new ArgumentNullException(nameof(source));
         }
 
         if (mapify == null) {
             throw new ArgumentNullException(nameof(mapify));
+        }
+
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
         }
 
         var sourceElementType = GetEnumerableElementType(source.GetType());
@@ -250,7 +262,7 @@ public static class MapifyProjectToExtensions {
     /// <returns>A projected sequence of <typeparamref name="TTarget"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> or <paramref name="mapify"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null, empty, or whitespace.</exception>
-    public static IEnumerable<TTarget> ProjectTo<TTarget>(this IEnumerable source, IMapify mapify, string name, IReadOnlyDictionary<string, object?>? parameters) {
+    public static IEnumerable<TTarget> ProjectTo<TTarget>(this IEnumerable source, IMapify mapify, string name, IReadOnlyDictionary<string, object?> parameters) {
         if (source == null) {
             throw new ArgumentNullException(nameof(source));
         }
@@ -261,6 +273,10 @@ public static class MapifyProjectToExtensions {
 
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
         }
 
         var sourceElementType = GetEnumerableElementType(source.GetType());
@@ -319,7 +335,7 @@ public static class MapifyProjectToExtensions {
         return (LambdaExpression)genericMethod.Invoke(mapify, null)!;
     }
 
-    private static LambdaExpression GetInstanceMapExpression(Type sourceType, Type targetType, IMapify mapify, IReadOnlyDictionary<string, object?>? parameters) {
+    private static LambdaExpression GetInstanceMapExpression(Type sourceType, Type targetType, IMapify mapify, IReadOnlyDictionary<string, object?> parameters) {
         var genericMethod = typeof(IMapify)
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .Single(m => m.Name == nameof(IMapify.GetRequiredMap)
@@ -345,7 +361,7 @@ public static class MapifyProjectToExtensions {
         return (LambdaExpression)genericMethod.Invoke(mapify, [name])!;
     }
 
-    private static LambdaExpression GetInstanceMapExpression(Type sourceType, Type targetType, IMapify mapify, string name, IReadOnlyDictionary<string, object?>? parameters) {
+    private static LambdaExpression GetInstanceMapExpression(Type sourceType, Type targetType, IMapify mapify, string name, IReadOnlyDictionary<string, object?> parameters) {
         var genericMethod = typeof(IMapify)
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .Single(m => m.Name == nameof(IMapify.GetRequiredMap)
@@ -374,7 +390,7 @@ public static class MapifyProjectToExtensions {
         return source.Cast<TSource>().Select(map);
     }
 
-    private static IEnumerable<TTarget> ProjectToEnumerableCoreInstanceWithParameters<TSource, TTarget>(IEnumerable source, IMapify mapify, IReadOnlyDictionary<string, object?>? parameters) {
+    private static IEnumerable<TTarget> ProjectToEnumerableCoreInstanceWithParameters<TSource, TTarget>(IEnumerable source, IMapify mapify, IReadOnlyDictionary<string, object?> parameters) {
         var map = mapify.GetRequiredMap<TSource, TTarget>(parameters).Compile();
         return source.Cast<TSource>().Select(map);
     }
@@ -384,7 +400,7 @@ public static class MapifyProjectToExtensions {
         return source.Cast<TSource>().Select(map);
     }
 
-    private static IEnumerable<TTarget> ProjectToEnumerableCoreInstanceNamedWithParameters<TSource, TTarget>(IEnumerable source, IMapify mapify, string name, IReadOnlyDictionary<string, object?>? parameters) {
+    private static IEnumerable<TTarget> ProjectToEnumerableCoreInstanceNamedWithParameters<TSource, TTarget>(IEnumerable source, IMapify mapify, string name, IReadOnlyDictionary<string, object?> parameters) {
         var map = mapify.GetRequiredMap<TSource, TTarget>(name, parameters).Compile();
         return source.Cast<TSource>().Select(map);
     }

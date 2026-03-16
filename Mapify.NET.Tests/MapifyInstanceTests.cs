@@ -1701,7 +1701,7 @@ public class MapifyInstanceTests {
 
         var ex = Assert.Throws<KeyNotFoundException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
             new ParameterizedSource { Value = 1 },
-            (IReadOnlyDictionary<string, object?>?)null
+            new Dictionary<string, object?>()
         ));
 
         Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
@@ -1714,7 +1714,7 @@ public class MapifyInstanceTests {
         var ex = Assert.Throws<KeyNotFoundException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
             new ParameterizedSource { Value = 1 },
             "NamedOffset",
-            (IReadOnlyDictionary<string, object?>?)null
+            new Dictionary<string, object?>()
         ));
 
         Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
