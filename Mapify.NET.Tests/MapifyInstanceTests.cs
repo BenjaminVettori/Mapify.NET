@@ -808,6 +808,14 @@ public class MapifyInstanceTests {
         }
     }
 
+    private class ParameterizedNamedProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ParameterizedSource, ParameterizedTarget>("NamedOffset", x => new ParameterizedTarget {
+                Value = x.Value + Parameter<int>("offset")
+            });
+        }
+    }
+
     private class RecursiveNodeProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<RecursiveNodeSource, RecursiveNodeTarget>(x => new RecursiveNodeTarget {
@@ -1630,6 +1638,85 @@ public class MapifyInstanceTests {
         var mapify = new Mapify(new ParameterizedProfile());
 
         var ex = Assert.Throws<KeyNotFoundException>(() => mapify.GetRequiredMap<ParameterizedSource, ParameterizedTarget>());
+        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var mapped = mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 3 },
+            new Dictionary<string, object?> { ["offset"] = 5 }
+        );
+
+        Assert.Equal(8, mapped.Value);
+    }
+
+    [Fact]
+    public void Map_ToExisting_Default_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedProfile());
+        var target = new ParameterizedTarget();
+
+        mapify.Map(
+            new ParameterizedSource { Value = 4 },
+            target,
+            new Dictionary<string, object?> { ["offset"] = 6 }
+        );
+
+        Assert.Equal(10, target.Value);
+    }
+
+    [Fact]
+    public void Map_Named_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedNamedProfile());
+
+        var mapped = mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 7 },
+            "NamedOffset",
+            new Dictionary<string, object?> { ["offset"] = 2 }
+        );
+
+        Assert.Equal(9, mapped.Value);
+    }
+
+    [Fact]
+    public void Map_ToExisting_Named_ShouldInjectRuntimeParameters_WhenProvided() {
+        var mapify = new Mapify(new ParameterizedNamedProfile());
+        var target = new ParameterizedTarget();
+
+        mapify.Map(
+            new ParameterizedSource { Value = 9 },
+            target,
+            "NamedOffset",
+            new Dictionary<string, object?> { ["offset"] = 4 }
+        );
+
+        Assert.Equal(13, target.Value);
+    }
+
+    [Fact]
+    public void Map_Default_ShouldThrow_WhenParameterIsMissing() {
+        var mapify = new Mapify(new ParameterizedProfile());
+
+        var ex = Assert.Throws<KeyNotFoundException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 1 },
+            (IReadOnlyDictionary<string, object?>?)null
+        ));
+
+        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Map_Named_ShouldThrow_WhenParameterIsMissing() {
+        var mapify = new Mapify(new ParameterizedNamedProfile());
+
+        var ex = Assert.Throws<KeyNotFoundException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+            new ParameterizedSource { Value = 1 },
+            "NamedOffset",
+            (IReadOnlyDictionary<string, object?>?)null
+        ));
+
         Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
     }
 

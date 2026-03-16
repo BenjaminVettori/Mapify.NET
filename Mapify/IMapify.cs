@@ -130,4 +130,46 @@ public interface IMapify {
     /// <param name="name">The map name.</param>
     /// <returns>A new mapped target object.</returns>
     TTarget Map<TSource, TTarget>(TSource source, string name);
+
+    /// <summary>
+    /// Maps the source object to a new target object using the default map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>A new mapped target object.</returns>
+    TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?>? parameters);
+
+    /// <summary>
+    /// Maps the source object to a new target object using a named map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>A new mapped target object.</returns>
+    TTarget Map<TSource, TTarget>(TSource source, string name, IReadOnlyDictionary<string, object?>? parameters);
+
+    /// <summary>
+    /// Maps values from the source object to an existing target object using the default map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="target">The target object to update.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?>? parameters);
+
+    /// <summary>
+    /// Maps values from the source object to an existing target object using a named map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="target">The target object to update.</param>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    void Map<TSource, TTarget>(TSource source, TTarget target, string name, IReadOnlyDictionary<string, object?>? parameters);
 }

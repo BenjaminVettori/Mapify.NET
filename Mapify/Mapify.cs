@@ -479,6 +479,32 @@ public class Mapify : IMapify, IMapifyConfigurator {
     }
 
     /// <summary>
+    /// Maps values from the source object to an existing target object using a named map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="target">The target object to update.</param>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
+    /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
+    public void Map<TSource, TTarget>(TSource source, TTarget target, string name, IReadOnlyDictionary<string, object?>? parameters) {
+        if (string.IsNullOrWhiteSpace(name)) {
+            throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
+
+        if (expression.Body is not MemberInitExpression) {
+            throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, name, parameters) instead.");
+        }
+
+        var compiled = Mapper.CompileMapper(expression);
+        compiled.Invoke(source, target);
+    }
+
+    /// <summary>
     /// Maps values from the source object to an existing target object using the default map.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
@@ -502,6 +528,27 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
         var compiled = Mapper.CompileMapper(expression);
         _compiledMapToExistingCache[key] = compiled;
+        compiled.Invoke(source, target);
+    }
+
+    /// <summary>
+    /// Maps values from the source object to an existing target object using the default map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="target">The target object to update.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
+    /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
+    public void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?>? parameters) {
+        var expression = GetRequiredMap<TSource, TTarget>(parameters);
+
+        if (expression.Body is not MemberInitExpression) {
+            throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, parameters) instead.");
+        }
+
+        var compiled = Mapper.CompileMapper(expression);
         compiled.Invoke(source, target);
     }
 
@@ -531,6 +578,26 @@ public class Mapify : IMapify, IMapifyConfigurator {
     }
 
     /// <summary>
+    /// Maps the source object to a new target object using a named map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="name">The map name.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>A new mapped target object.</returns>
+    /// <exception cref="ArgumentException">Thrown when the name is invalid or the named map is missing.</exception>
+    public TTarget Map<TSource, TTarget>(TSource source, string name, IReadOnlyDictionary<string, object?>? parameters) {
+        if (string.IsNullOrWhiteSpace(name)) {
+            throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
+        var compiled = expression.Compile();
+        return compiled.Invoke(source);
+    }
+
+    /// <summary>
     /// Maps the source object to a new target object using the default map.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
@@ -547,6 +614,21 @@ public class Mapify : IMapify, IMapifyConfigurator {
         var expression = GetRequiredMap<TSource, TTarget>();
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
+        return compiled.Invoke(source);
+    }
+
+    /// <summary>
+    /// Maps the source object to a new target object using the default map and runtime parameters.
+    /// </summary>
+    /// <typeparam name="TSource">The source type.</typeparam>
+    /// <typeparam name="TTarget">The target type.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
+    /// <returns>A new mapped target object.</returns>
+    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
+    public TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?>? parameters) {
+        var expression = GetRequiredMap<TSource, TTarget>(parameters);
+        var compiled = expression.Compile();
         return compiled.Invoke(source);
     }
 

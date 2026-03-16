@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Linq.Expressions;
 
 namespace Mapify.NET.Tests;
 
@@ -9,7 +8,7 @@ public class MapifyProjectToExtensionsTests {
         Mapper.UseDefaultMapIfTypeMapIsMissing(false);
         Mapper.ClearMappings();
     }
-
+    
     [Fact]
     public void ProjectTo_IEnumerable_Static_ShouldProjectItems() {
         Mapper.AddMap<ProjectSource, ProjectTarget>(x => new ProjectTarget { Value = x.Value + 1 });
@@ -22,21 +21,6 @@ public class MapifyProjectToExtensionsTests {
         var projected = source.ProjectTo<ProjectTarget>().Select(x => x.Value).ToArray();
 
         Assert.Equal([2, 3], projected);
-    }
-
-    [Fact]
-    public void ProjectTo_IEnumerable_StaticWithParameters_ShouldApplyParameterMarker() {
-        Mapper.AddMap(StaticParameterizedMapProfile.CreateMap());
-
-        IEnumerable source = new[] {
-            new ProjectSource { Value = 2 }
-        };
-
-        var projected = source
-            .ProjectTo<ProjectTarget>(new Dictionary<string, object?> { ["offset"] = 5 })
-            .Single();
-
-        Assert.Equal(7, projected.Value);
     }
 
     [Fact]
@@ -141,7 +125,6 @@ public class MapifyProjectToExtensionsTests {
         IQueryable? source = null;
 
         Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>());
-        Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(new Dictionary<string, object?>()));
     }
 
     [Fact]
@@ -214,7 +197,6 @@ public class MapifyProjectToExtensionsTests {
         IEnumerable? source = null;
         var mapify = new Mapify([new EnumerableNamedProjectWithParameterProfile()]);
 
-        Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(new Dictionary<string, object?>()));
         Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(mapify, new Dictionary<string, object?>()));
         Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(mapify, "NamedParam"));
         Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(mapify, "NamedParam", new Dictionary<string, object?>()));
@@ -225,16 +207,6 @@ public class MapifyProjectToExtensionsTests {
         IEnumerable source = new[] { new ProjectSource { Value = 1 } };
 
         Assert.Throws<ArgumentNullException>(() => source.ProjectTo<ProjectTarget>((IMapify)null!, "Named"));
-    }
-
-    private sealed class StaticParameterizedMapProfile : MapifyProfile {
-        protected override void Configure() {
-        }
-
-        public static Expression<Func<ProjectSource, ProjectTarget>> CreateMap()
-            => x => new ProjectTarget {
-                Value = x.Value + Parameter<int>("offset")
-            };
     }
 
     private sealed class EnumerableProjectProfile : MapifyProfile {
