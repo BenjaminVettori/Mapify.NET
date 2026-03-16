@@ -7,6 +7,16 @@ namespace Mapify.NET;
 /// Extension methods for projecting non-generic and generic query/sequence sources to mapped target types.
 /// </summary>
 public static class MapifyProjectToExtensions {
+    private static void ValidateRuntimeParameters(IReadOnlyDictionary<string, object?> parameters) {
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (parameters.Count == 0) {
+            throw new ArgumentException("At least one runtime parameter must be provided when using a parameterized overload.", nameof(parameters));
+        }
+    }
+
     /// <summary>
     /// Projects a non-generic query to <typeparamref name="TTarget"/> using the static mapper configuration.
     /// </summary>
@@ -64,9 +74,7 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentNullException(nameof(mapify));
         }
 
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify, parameters);
         return BuildProjectedQuery<TTarget>(source, mapExpression);
@@ -123,9 +131,7 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify, name, parameters);
         return BuildProjectedQuery<TTarget>(source, mapExpression);
@@ -208,9 +214,7 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentNullException(nameof(mapify));
         }
 
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var sourceElementType = GetEnumerableElementType(source.GetType());
         var method = typeof(MapifyProjectToExtensions)
@@ -275,9 +279,7 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var sourceElementType = GetEnumerableElementType(source.GetType());
         var method = typeof(MapifyProjectToExtensions)

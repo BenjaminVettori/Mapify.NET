@@ -232,6 +232,16 @@ public class MapifyProjectToExtensionsTests {
     }
 
     [Fact]
+    public void ProjectTo_IQueryable_InstanceWithParameters_ShouldThrowForEmptyParameters() {
+        var mapify = new Mapify([new EnumerableProjectWithParameterProfile()]);
+        IQueryable source = new[] { new ProjectSourceWithParameter { Value = 1 } }.AsQueryable();
+
+        var ex = Assert.Throws<ArgumentException>(() => source.ProjectTo<ProjectTargetWithParameter>(mapify, new Dictionary<string, object?>()));
+
+        Assert.Contains("At least one runtime parameter", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProjectTo_IQueryable_InstanceOverloads_ShouldThrowForNullSource() {
         IQueryable? source = null;
         var mapify = new Mapify([new EnumerableNamedProjectWithParameterProfile()]);
@@ -250,6 +260,16 @@ public class MapifyProjectToExtensionsTests {
         Assert.Throws<ArgumentException>(() => source.ProjectTo<ProjectTarget>(mapify, " "));
         Assert.Throws<ArgumentException>(() => source.ProjectTo<ProjectTarget>(mapify, " ", new Dictionary<string, object?>()));
         Assert.Throws<ArgumentNullException>(() => source.ProjectTo<ProjectTarget>((IMapify)null!, new Dictionary<string, object?>()));
+    }
+
+    [Fact]
+    public void ProjectTo_IEnumerable_InstanceWithParameters_ShouldThrowForEmptyParameters() {
+        var mapify = new Mapify([new EnumerableProjectWithParameterProfile()]);
+        IEnumerable source = new[] { new ProjectSourceWithParameter { Value = 1 } };
+
+        var ex = Assert.Throws<ArgumentException>(() => source.ProjectTo<ProjectTargetWithParameter>(mapify, new Dictionary<string, object?>()));
+
+        Assert.Contains("At least one runtime parameter", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

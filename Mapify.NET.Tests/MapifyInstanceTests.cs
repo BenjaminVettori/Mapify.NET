@@ -1739,25 +1739,25 @@ public class MapifyInstanceTests {
     public void Map_Default_ShouldThrow_WhenParameterIsMissing() {
         var mapify = new Mapify(new ParameterizedProfile());
 
-        var ex = Assert.Throws<KeyNotFoundException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+        var ex = Assert.Throws<ArgumentException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
             new ParameterizedSource { Value = 1 },
             new Dictionary<string, object?>()
         ));
 
-        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("At least one runtime parameter", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Map_Named_ShouldThrow_WhenParameterIsMissing() {
         var mapify = new Mapify(new ParameterizedNamedProfile());
 
-        var ex = Assert.Throws<KeyNotFoundException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
+        var ex = Assert.Throws<ArgumentException>(() => mapify.Map<ParameterizedSource, ParameterizedTarget>(
             new ParameterizedSource { Value = 1 },
             "NamedOffset",
             new Dictionary<string, object?>()
         ));
 
-        Assert.Contains("offset", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("At least one runtime parameter", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

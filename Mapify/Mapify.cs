@@ -29,6 +29,16 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
     private static readonly IReadOnlyDictionary<string, object?> _emptyParameters = new Dictionary<string, object?>();
 
+    private static void ValidateRuntimeParameters(IReadOnlyDictionary<string, object?> parameters) {
+        if (parameters == null) {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (parameters.Count == 0 && !ReferenceEquals(parameters, _emptyParameters)) {
+            throw new ArgumentException("At least one runtime parameter must be provided when using a parameterized overload.", nameof(parameters));
+        }
+    }
+
     /// <summary>
     /// Creates a mapper instance and applies the provided profiles.
     /// </summary>
@@ -343,9 +353,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
         if (_converters.TryGetValue(key, out var existingConverter)) {
@@ -405,9 +413,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <param name="parameters">Runtime parameters used by <see cref="MapifyProfile"/> <c>Parameter&lt;T&gt;(name)</c> markers.</param>
     /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
     public Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters) {
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_converters.TryGetValue(key, out var existingConverter)) {
@@ -504,9 +510,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
 
@@ -556,9 +560,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
     /// <exception cref="NotSupportedException">Thrown when the map cannot target an existing instance.</exception>
     public void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?> parameters) {
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var expression = GetRequiredMap<TSource, TTarget>(parameters);
 
@@ -610,9 +612,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
         var compiled = expression.Compile();
@@ -649,9 +649,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     /// <returns>A new mapped target object.</returns>
     /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
     public TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?> parameters) {
-        if (parameters == null) {
-            throw new ArgumentNullException(nameof(parameters));
-        }
+        ValidateRuntimeParameters(parameters);
 
         var expression = GetRequiredMap<TSource, TTarget>(parameters);
         var compiled = expression.Compile();
