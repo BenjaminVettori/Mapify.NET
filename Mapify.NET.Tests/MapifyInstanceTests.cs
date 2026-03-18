@@ -184,6 +184,10 @@ public class MapifyInstanceTests {
         public int Value { get; set; }
     }
 
+    private class CollectionSummaryTarget {
+        public int Count { get; set; }
+    }
+
     private class CollectionUseMapSource {
         public ElementSource[] ItemsArray { get; set; } = [];
         public List<ElementSource> ItemsList { get; set; } = [];
@@ -645,6 +649,98 @@ public class MapifyInstanceTests {
                 ItemsEnumerable = UseMap<IEnumerable<ElementSource>, IEnumerable<ElementTarget>>(x.ItemsArray),
                 ItemsCollection = UseMap<ICollection<ElementSource>, ICollection<ElementTarget>>(x.ItemsList),
                 ItemsArrayAsList = UseMap<ICollection<ElementSource>, IList<ElementTarget>>(x.ItemsArray)
+            });
+        }
+    }
+
+    private class CollectionSummaryListProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<List<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 10
+            });
+        }
+    }
+
+    private class CollectionSummaryIListProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<IList<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 20
+            });
+        }
+    }
+
+    private class CollectionSummaryICollectionProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ICollection<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 30
+            });
+        }
+    }
+
+    private class CollectionSummaryIReadOnlyListProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<IReadOnlyList<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 40
+            });
+        }
+    }
+
+    private class CollectionSummaryIReadOnlyCollectionProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<IReadOnlyCollection<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 50
+            });
+        }
+    }
+
+    private class CollectionSummaryIEnumerableProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<IEnumerable<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 60
+            });
+        }
+    }
+
+    private class CollectionSummaryHierarchyWithoutExactProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<IEnumerable<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 500
+            });
+            CreateMap<IReadOnlyCollection<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 400
+            });
+            CreateMap<IReadOnlyList<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 300
+            });
+            CreateMap<ICollection<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 200
+            });
+            CreateMap<IList<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 100
+            });
+        }
+    }
+
+    private class CollectionSummaryHierarchyWithExactProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<IEnumerable<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 500
+            });
+            CreateMap<IReadOnlyCollection<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 400
+            });
+            CreateMap<IReadOnlyList<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 300
+            });
+            CreateMap<ICollection<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 200
+            });
+            CreateMap<IList<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 100
+            });
+
+            CreateMap<List<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
+                Count = x.Count() + 1000
             });
         }
     }
@@ -1601,6 +1697,120 @@ public class MapifyInstanceTests {
     }
 
     [Fact]
+    public void Map_ShouldMapListToList_WhenOnlyElementMapIsRegistered() {
+        var mapify = new Mapify(new ElementProfile());
+
+        var mapped = mapify.Map<List<ElementSource>, List<ElementTarget>>([
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 }
+        ]);
+
+        Assert.Equal([2, 3], mapped.Select(x => x.Value).ToArray());
+    }
+
+    [Theory]
+    [MemberData(nameof(CollectionHierarchyKinds))]
+    public void Map_ShouldFallbackFromConcreteListSource_ToAnyRegisteredHierarchyCollectionMap_WhenMappingToObject(CollectionHierarchyKind declaredMapKind) {
+        var mapify = CreateMapifyForDeclaredCollectionKind(declaredMapKind);
+
+        var mapped = mapify.Map<List<ElementSource>, CollectionSummaryTarget>(CreateElementSourceList());
+
+        Assert.Equal(3 + GetCollectionOffset(declaredMapKind), mapped.Count);
+    }
+
+    [Theory]
+    [MemberData(nameof(CollectionHierarchyCombinations))]
+    public void Map_ShouldResolveAccordingToCollectionHierarchy_ForAllSourceAndRegisteredCollectionCombinations(
+        CollectionHierarchyKind sourceKind,
+        CollectionHierarchyKind declaredMapKind
+    ) {
+        var mapify = CreateMapifyForDeclaredCollectionKind(declaredMapKind);
+
+        if (CanResolveCollectionMap(sourceKind, declaredMapKind)) {
+            var mapped = MapCollectionSummary(mapify, sourceKind, CreateElementSourceList());
+            Assert.Equal(3 + GetCollectionOffset(declaredMapKind), mapped.Count);
+        } else {
+            Assert.Throws<ArgumentException>(() => MapCollectionSummary(mapify, sourceKind, CreateElementSourceList()));
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(CollectionHierarchyCombinations))]
+    public void Map_ShouldResolveAllCollectionCombinations_WhenOnlyElementMapIsRegistered(
+        CollectionHierarchyKind sourceKind,
+        CollectionHierarchyKind targetKind
+    ) {
+        var mapify = new Mapify(new ElementProfile());
+
+        var mappedCollection = MapElementCollection(mapify, sourceKind, targetKind, CreateElementSourceList());
+        var values = mappedCollection.Select(x => x.Value).ToArray();
+
+        Assert.Equal([2, 3, 4], values);
+    }
+
+    [Fact]
+    public void Map_ShouldMapListOfLists_WhenOnlyElementMapIsRegistered() {
+        var mapify = new Mapify(new ElementProfile());
+
+        var mapped = mapify.Map<List<List<ElementSource>>, List<List<ElementTarget>>>([
+            [
+                new ElementSource { Value = 1 },
+                new ElementSource { Value = 2 }
+            ],
+            [
+                new ElementSource { Value = 3 }
+            ]
+        ]);
+
+        var flattened = mapped.SelectMany(inner => inner.Select(item => item.Value)).ToArray();
+
+        Assert.Equal([2, 3, 4], flattened);
+    }
+
+    [Fact]
+    public void Map_ShouldMapListOfListOfLists_WhenOnlyElementMapIsRegistered() {
+        var mapify = new Mapify(new ElementProfile());
+
+        var mapped = mapify.Map<List<List<List<ElementSource>>>, List<List<List<ElementTarget>>>>([
+            [
+                [
+                    new ElementSource { Value = 1 },
+                    new ElementSource { Value = 2 }
+                ]
+            ],
+            [
+                [
+                    new ElementSource { Value = 3 }
+                ]
+            ]
+        ]);
+
+        var flattened = mapped
+            .SelectMany(middle => middle.SelectMany(inner => inner.Select(item => item.Value)))
+            .ToArray();
+
+        Assert.Equal([2, 3, 4], flattened);
+    }
+
+    [Fact]
+    public void Map_ShouldPreferHigherRankedCollectionMap_WhenMultipleInterfaceMapsExist_AndNoExactMapIsRegistered() {
+        var mapify = new Mapify(new CollectionSummaryHierarchyWithoutExactProfile());
+
+        var mapped = mapify.Map<List<ElementSource>, CollectionSummaryTarget>(CreateElementSourceList());
+
+        Assert.Equal(103, mapped.Count);
+    }
+
+    [Fact]
+    public void Map_ShouldPreferExactCollectionSourceMap_OverHierarchyCandidates_WhenBothExist() {
+        var mapify = new Mapify(new CollectionSummaryHierarchyWithExactProfile());
+
+        var mapped = mapify.Map<List<ElementSource>, CollectionSummaryTarget>(CreateElementSourceList());
+
+        Assert.Equal(1003, mapped.Count);
+    }
+
+    [Fact]
     public void Map_UseMapMarker_ShouldAcceptSourceExpressions_SuchAsWhereFilters() {
         var mapify = new Mapify(new FilterClassProfile(), new FilterStudentProfile());
 
@@ -2067,5 +2277,121 @@ public class MapifyInstanceTests {
         );
 
         Assert.Equal(["+1-200 [MASKED]"], mapped.Phones.Select(x => x.Number).ToArray());
+    }
+
+    public static IEnumerable<object[]> CollectionHierarchyKinds() {
+        foreach (var kind in Enum.GetValues<CollectionHierarchyKind>()) {
+            yield return [kind];
+        }
+    }
+
+    public static IEnumerable<object[]> CollectionHierarchyCombinations() {
+        foreach (var sourceKind in Enum.GetValues<CollectionHierarchyKind>()) {
+            foreach (var declaredMapKind in Enum.GetValues<CollectionHierarchyKind>()) {
+                yield return [sourceKind, declaredMapKind];
+            }
+        }
+    }
+
+    private static List<ElementSource> CreateElementSourceList()
+        => [
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        ];
+
+    private static int GetCollectionOffset(CollectionHierarchyKind kind)
+        => kind switch {
+            CollectionHierarchyKind.List => 10,
+            CollectionHierarchyKind.IList => 20,
+            CollectionHierarchyKind.ICollection => 30,
+            CollectionHierarchyKind.IReadOnlyList => 40,
+            CollectionHierarchyKind.IReadOnlyCollection => 50,
+            CollectionHierarchyKind.IEnumerable => 60,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+
+    private static IMapify CreateMapifyForDeclaredCollectionKind(CollectionHierarchyKind kind)
+        => kind switch {
+            CollectionHierarchyKind.List => new Mapify(new CollectionSummaryListProfile()),
+            CollectionHierarchyKind.IList => new Mapify(new CollectionSummaryIListProfile()),
+            CollectionHierarchyKind.ICollection => new Mapify(new CollectionSummaryICollectionProfile()),
+            CollectionHierarchyKind.IReadOnlyList => new Mapify(new CollectionSummaryIReadOnlyListProfile()),
+            CollectionHierarchyKind.IReadOnlyCollection => new Mapify(new CollectionSummaryIReadOnlyCollectionProfile()),
+            CollectionHierarchyKind.IEnumerable => new Mapify(new CollectionSummaryIEnumerableProfile()),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+
+    private static CollectionSummaryTarget MapCollectionSummary(IMapify mapify, CollectionHierarchyKind sourceKind, List<ElementSource> source)
+        => sourceKind switch {
+            CollectionHierarchyKind.List => mapify.Map<List<ElementSource>, CollectionSummaryTarget>(source),
+            CollectionHierarchyKind.IList => mapify.Map<IList<ElementSource>, CollectionSummaryTarget>(source),
+            CollectionHierarchyKind.ICollection => mapify.Map<ICollection<ElementSource>, CollectionSummaryTarget>(source),
+            CollectionHierarchyKind.IReadOnlyList => mapify.Map<IReadOnlyList<ElementSource>, CollectionSummaryTarget>(source),
+            CollectionHierarchyKind.IReadOnlyCollection => mapify.Map<IReadOnlyCollection<ElementSource>, CollectionSummaryTarget>(source),
+            CollectionHierarchyKind.IEnumerable => mapify.Map<IEnumerable<ElementSource>, CollectionSummaryTarget>(source),
+            _ => throw new ArgumentOutOfRangeException(nameof(sourceKind))
+        };
+
+    private static IEnumerable<ElementTarget> MapElementCollection(
+        IMapify mapify,
+        CollectionHierarchyKind sourceKind,
+        CollectionHierarchyKind targetKind,
+        List<ElementSource> source
+    )
+        => sourceKind switch {
+            CollectionHierarchyKind.List => MapElementCollectionCore<List<ElementSource>>(mapify, source, targetKind),
+            CollectionHierarchyKind.IList => MapElementCollectionCore<IList<ElementSource>>(mapify, source, targetKind),
+            CollectionHierarchyKind.ICollection => MapElementCollectionCore<ICollection<ElementSource>>(mapify, source, targetKind),
+            CollectionHierarchyKind.IReadOnlyList => MapElementCollectionCore<IReadOnlyList<ElementSource>>(mapify, source, targetKind),
+            CollectionHierarchyKind.IReadOnlyCollection => MapElementCollectionCore<IReadOnlyCollection<ElementSource>>(mapify, source, targetKind),
+            CollectionHierarchyKind.IEnumerable => MapElementCollectionCore<IEnumerable<ElementSource>>(mapify, source, targetKind),
+            _ => throw new ArgumentOutOfRangeException(nameof(sourceKind))
+        };
+
+    private static IEnumerable<ElementTarget> MapElementCollectionCore<TSourceCollection>(
+        IMapify mapify,
+        TSourceCollection source,
+        CollectionHierarchyKind targetKind
+    ) where TSourceCollection : IEnumerable<ElementSource>
+        => targetKind switch {
+            CollectionHierarchyKind.List => mapify.Map<TSourceCollection, List<ElementTarget>>(source),
+            CollectionHierarchyKind.IList => mapify.Map<TSourceCollection, IList<ElementTarget>>(source),
+            CollectionHierarchyKind.ICollection => mapify.Map<TSourceCollection, ICollection<ElementTarget>>(source),
+            CollectionHierarchyKind.IReadOnlyList => mapify.Map<TSourceCollection, IReadOnlyList<ElementTarget>>(source),
+            CollectionHierarchyKind.IReadOnlyCollection => mapify.Map<TSourceCollection, IReadOnlyCollection<ElementTarget>>(source),
+            CollectionHierarchyKind.IEnumerable => mapify.Map<TSourceCollection, IEnumerable<ElementTarget>>(source),
+            _ => throw new ArgumentOutOfRangeException(nameof(targetKind))
+        };
+
+    private static bool CanResolveCollectionMap(CollectionHierarchyKind sourceKind, CollectionHierarchyKind declaredMapKind)
+        => sourceKind switch {
+            CollectionHierarchyKind.List => declaredMapKind is CollectionHierarchyKind.List
+                or CollectionHierarchyKind.IList
+                or CollectionHierarchyKind.ICollection
+                or CollectionHierarchyKind.IReadOnlyList
+                or CollectionHierarchyKind.IReadOnlyCollection
+                or CollectionHierarchyKind.IEnumerable,
+            CollectionHierarchyKind.IList => declaredMapKind is CollectionHierarchyKind.IList
+                or CollectionHierarchyKind.ICollection
+                or CollectionHierarchyKind.IEnumerable,
+            CollectionHierarchyKind.ICollection => declaredMapKind is CollectionHierarchyKind.ICollection
+                or CollectionHierarchyKind.IEnumerable,
+            CollectionHierarchyKind.IReadOnlyList => declaredMapKind is CollectionHierarchyKind.IReadOnlyList
+                or CollectionHierarchyKind.IReadOnlyCollection
+                or CollectionHierarchyKind.IEnumerable,
+            CollectionHierarchyKind.IReadOnlyCollection => declaredMapKind is CollectionHierarchyKind.IReadOnlyCollection
+                or CollectionHierarchyKind.IEnumerable,
+            CollectionHierarchyKind.IEnumerable => declaredMapKind is CollectionHierarchyKind.IEnumerable,
+            _ => false
+        };
+
+    public enum CollectionHierarchyKind {
+        List,
+        IList,
+        ICollection,
+        IReadOnlyList,
+        IReadOnlyCollection,
+        IEnumerable
     }
 }
