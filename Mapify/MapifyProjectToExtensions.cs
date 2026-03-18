@@ -29,7 +29,7 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentNullException(nameof(source));
         }
 
-        var mapExpression = GetStaticMapExpression(source.ElementType, typeof(TTarget));
+        var mapExpression = GetQueryMapExpression(() => GetStaticRuntimeMapExpression(source.ElementType, typeof(TTarget)));
         return BuildProjectedQuery<TTarget>(source, mapExpression);
     }
 
@@ -52,7 +52,7 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentNullException(nameof(mapify));
         }
 
-        var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify);
+        var mapExpression = GetQueryMapExpression(() => GetInstanceRuntimeMapExpression(source.ElementType, typeof(TTarget), mapify));
         return BuildProjectedQuery<TTarget>(source, mapExpression);
     }
 
@@ -76,7 +76,7 @@ public static class MapifyProjectToExtensions {
 
         ValidateRuntimeParameters(parameters);
 
-        var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify, parameters);
+        var mapExpression = GetQueryMapExpression(() => GetInstanceRuntimeMapExpression(source.ElementType, typeof(TTarget), mapify, null, parameters));
         return BuildProjectedQuery<TTarget>(source, mapExpression);
     }
 
@@ -103,7 +103,7 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify, name);
+        var mapExpression = GetQueryMapExpression(() => GetInstanceRuntimeMapExpression(source.ElementType, typeof(TTarget), mapify, name));
         return BuildProjectedQuery<TTarget>(source, mapExpression);
     }
 
@@ -133,7 +133,7 @@ public static class MapifyProjectToExtensions {
 
         ValidateRuntimeParameters(parameters);
 
-        var mapExpression = GetInstanceMapExpression(source.ElementType, typeof(TTarget), mapify, name, parameters);
+        var mapExpression = GetQueryMapExpression(() => GetInstanceRuntimeMapExpression(source.ElementType, typeof(TTarget), mapify, name, parameters));
         return BuildProjectedQuery<TTarget>(source, mapExpression);
     }
 
@@ -313,16 +313,43 @@ public static class MapifyProjectToExtensions {
         return source.Provider.CreateQuery<TTarget>(selectExpression);
     }
 
-    private static LambdaExpression GetStaticMapExpression(Type sourceType, Type targetType) {
-        var genericMethod = typeof(Mapper)
-            .GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-            .Single(m => m.Name == nameof(Mapper.GetRequiredMap)
-                && m.IsGenericMethodDefinition
-                && m.GetGenericArguments().Length == 2
-                && m.GetParameters().Length == 0)
-            .MakeGenericMethod(sourceType, targetType);
+    private static LambdaExpression GetQueryMapExpression(Func<LambdaExpression> resolver) {
+        try {
+            return resolver();
+        } catch (TargetInvocationException) {
+            throw;
+        } catch (Exception ex) {
+            throw new TargetInvocationException(ex);
+        }
+    }
 
-        return (LambdaExpression)genericMethod.Invoke(null, null)!;
+    private static LambdaExpression GetStaticRuntimeMapExpression(Type sourceType, Type targetType)
+        => Mapper.GetRequiredRuntimeMapUntyped(sourceType, targetType);
+
+    private static LambdaExpression GetInstanceRuntimeMapExpression(
+        Type sourceType,
+        Type targetType,
+        IMapify mapify,
+        string? name = null,
+        IReadOnlyDictionary<string, object?>? parameters = null
+    ) {
+        if (mapify is Mapify concreteMapify) {
+            return concreteMapify.GetRequiredRuntimeMapUntyped(sourceType, targetType, name, parameters);
+        }
+
+        if (name == null && parameters == null) {
+            return GetInstanceMapExpression(sourceType, targetType, mapify);
+        }
+
+        if (name == null) {
+            return GetInstanceMapExpression(sourceType, targetType, mapify, parameters!);
+        }
+
+        if (parameters == null) {
+            return GetInstanceMapExpression(sourceType, targetType, mapify, name);
+        }
+
+        return GetInstanceMapExpression(sourceType, targetType, mapify, name, parameters);
     }
 
     private static LambdaExpression GetInstanceMapExpression(Type sourceType, Type targetType, IMapify mapify) {
@@ -378,7 +405,7 @@ public static class MapifyProjectToExtensions {
     }
 
     private static IEnumerable<TTarget> ProjectToEnumerableCoreStatic<TSource, TTarget>(IEnumerable source) {
-        var map = Mapper.GetRequiredMap<TSource, TTarget>().Compile();
+        var map = ((Expression<Func<TSource, TTarget>>)GetStaticRuntimeMapExpression(typeof(TSource), typeof(TTarget))).Compile();
         return source.Cast<TSource>().Select(map);
     }
 
@@ -388,22 +415,22 @@ public static class MapifyProjectToExtensions {
     // and then compiling/using the resulting expression.
 
     private static IEnumerable<TTarget> ProjectToEnumerableCoreInstance<TSource, TTarget>(IEnumerable source, IMapify mapify) {
-        var map = mapify.GetRequiredMap<TSource, TTarget>().Compile();
+        var map = ((Expression<Func<TSource, TTarget>>)GetInstanceRuntimeMapExpression(typeof(TSource), typeof(TTarget), mapify)).Compile();
         return source.Cast<TSource>().Select(map);
     }
 
     private static IEnumerable<TTarget> ProjectToEnumerableCoreInstanceWithParameters<TSource, TTarget>(IEnumerable source, IMapify mapify, IReadOnlyDictionary<string, object?> parameters) {
-        var map = mapify.GetRequiredMap<TSource, TTarget>(parameters).Compile();
+        var map = ((Expression<Func<TSource, TTarget>>)GetInstanceRuntimeMapExpression(typeof(TSource), typeof(TTarget), mapify, null, parameters)).Compile();
         return source.Cast<TSource>().Select(map);
     }
 
     private static IEnumerable<TTarget> ProjectToEnumerableCoreInstanceNamed<TSource, TTarget>(IEnumerable source, IMapify mapify, string name) {
-        var map = mapify.GetRequiredMap<TSource, TTarget>(name).Compile();
+        var map = ((Expression<Func<TSource, TTarget>>)GetInstanceRuntimeMapExpression(typeof(TSource), typeof(TTarget), mapify, name)).Compile();
         return source.Cast<TSource>().Select(map);
     }
 
     private static IEnumerable<TTarget> ProjectToEnumerableCoreInstanceNamedWithParameters<TSource, TTarget>(IEnumerable source, IMapify mapify, string name, IReadOnlyDictionary<string, object?> parameters) {
-        var map = mapify.GetRequiredMap<TSource, TTarget>(name, parameters).Compile();
+        var map = ((Expression<Func<TSource, TTarget>>)GetInstanceRuntimeMapExpression(typeof(TSource), typeof(TTarget), mapify, name, parameters)).Compile();
         return source.Cast<TSource>().Select(map);
     }
 

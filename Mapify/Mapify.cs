@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 
 namespace Mapify.NET;
 
@@ -483,7 +484,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             return;
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>(name);
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(name, _emptyParameters);
 
         if (expression.Body is not MemberInitExpression) {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, name) instead.");
@@ -512,7 +513,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
         ValidateRuntimeParameters(parameters);
 
-        var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(name, parameters);
 
         if (expression.Body is not MemberInitExpression) {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, name, parameters) instead.");
@@ -538,7 +539,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             return;
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>();
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(null, _emptyParameters);
 
         if (expression.Body is not MemberInitExpression) {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
@@ -562,7 +563,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     public void Map<TSource, TTarget>(TSource source, TTarget target, IReadOnlyDictionary<string, object?> parameters) {
         ValidateRuntimeParameters(parameters);
 
-        var expression = GetRequiredMap<TSource, TTarget>(parameters);
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(null, parameters);
 
         if (expression.Body is not MemberInitExpression) {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, parameters) instead.");
@@ -591,7 +592,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             return ((Func<TSource, TTarget>)map).Invoke(source);
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>(name);
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(name, _emptyParameters);
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);
@@ -614,7 +615,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
         ValidateRuntimeParameters(parameters);
 
-        var expression = GetRequiredMap<TSource, TTarget>(name, parameters);
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(name, parameters);
         var compiled = expression.Compile();
         return compiled.Invoke(source);
     }
@@ -633,7 +634,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             return ((Func<TSource, TTarget>)map).Invoke(source);
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>();
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(null, _emptyParameters);
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);
@@ -651,9 +652,75 @@ public class Mapify : IMapify, IMapifyConfigurator {
     public TTarget Map<TSource, TTarget>(TSource source, IReadOnlyDictionary<string, object?> parameters) {
         ValidateRuntimeParameters(parameters);
 
-        var expression = GetRequiredMap<TSource, TTarget>(parameters);
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>(null, parameters);
         var compiled = expression.Compile();
         return compiled.Invoke(source);
+    }
+
+    private Expression<Func<TSource, TTarget>> GetRequiredRuntimeMap<TSource, TTarget>(
+        string? name,
+        IReadOnlyDictionary<string, object?> parameters
+    ) {
+        if (Mapper.TryCreateRuntimeMapExpression<TSource, TTarget>(
+                (sourceType, targetType, requestedMapName) => ResolveRuntimeMapCandidate(sourceType, targetType, requestedMapName ?? name, parameters),
+                name,
+                out var runtimeMapExpression)) {
+            return runtimeMapExpression;
+        }
+
+        if (name == null && _useDefaultMapIfTypeMapIsMissing) {
+            var defaultCacheKey = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
+            if (_defaultMapCache.TryGetValue(defaultCacheKey, out var existingDefaultMap)) {
+                return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
+            }
+
+            var defaultMap = Mapper.CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
+            _defaultMapCache[defaultCacheKey] = defaultMap;
+            return Mapper.ApplyParameters(defaultMap, parameters);
+        }
+
+        if (name == null) {
+            throw new ArgumentException($"Missing type map configuration for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
+        }
+
+        throw new ArgumentException($"Missing named type map configuration '{name}' for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
+    }
+
+    internal LambdaExpression GetRequiredRuntimeMapUntyped(
+        Type sourceType,
+        Type targetType,
+        string? name,
+        IReadOnlyDictionary<string, object?>? parameters
+    ) {
+        var genericMethod = typeof(Mapify)
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Single(m => m.Name == nameof(GetRequiredRuntimeMap)
+                && m.IsGenericMethodDefinition
+                && m.GetGenericArguments().Length == 2
+                && m.GetParameters().Length == 2)
+            .MakeGenericMethod(sourceType, targetType);
+
+        var runtimeParameters = parameters ?? _emptyParameters;
+        try {
+            return (LambdaExpression)genericMethod.Invoke(this, [name, runtimeParameters])!;
+        } catch (TargetInvocationException ex) when (ex.InnerException != null) {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
+    }
+
+    private LambdaExpression? ResolveRuntimeMapCandidate(
+        Type sourceType,
+        Type targetType,
+        string? name,
+        IReadOnlyDictionary<string, object?> parameters
+    ) {
+        var key = new MapKey(sourceType, targetType, name);
+        if (_converters.TryGetValue(key, out var existingConverter)) {
+            return Mapper.ApplyParameters(existingConverter, parameters);
+        }
+
+        return null;
     }
 
     private readonly struct MapKey(Type sourceType, Type targetType, string? name) : IEquatable<MapKey> {

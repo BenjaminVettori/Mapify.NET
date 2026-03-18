@@ -266,6 +266,13 @@ var people = _dbContext.Persons
     .ToArray();
 ```
 
+`ProjectTo` uses the same runtime fallback behavior as `Map`, including:
+
+- collection-shape fallback (for example `IEnumerable<TSrc>` map reused for `List<TSrc>`)
+- collection-to-single-object fallback (for example `IEnumerable<TSrc> -> Dto` reused for `List<TSrc> -> Dto`)
+- collection-to-collection materialization fallback (for example `IEnumerable<TSrc> -> IEnumerable<TDest>` reused for `List<TSrc> -> IReadOnlyCollection<TDest>`)
+- nested collection fallback at multiple depths when only element maps exist (for example `List<List<List<TSrc>>> -> List<List<List<TDest>>>` via `TSrc -> TDest`)
+
 For named maps, both APIs follow the same rule:
 
 - `GetMap<TSource, TTarget>("Name")` may return `null` when the named map is missing
@@ -428,11 +435,17 @@ When `CreateMap<TSource, TTarget>()` is called, Mapify automatically generates b
 
 ### Mapping Type Resolution Precedence
 
-When Mapify tries to resolve a nested map (implicit same-name property mapping or `UseMap`), it follows this precedence:
+Mapify uses the same runtime type-resolution rules for:
+
+- `Map(source)` / `Map(source, target)`
+- top-level `ProjectTo<TTarget>(...)`
+- nested map resolution inside `CreateMap` (`UseMap` and `ProjectTo` markers)
+
+When Mapify resolves a map candidate, it follows this precedence:
 
 1. **Exact source/target type match**
 2. **Nullable underlying-type fallback**
-3. **Assignable collection-pair fallback** (e.g. `IEnumerable<T>` map reused for `List<T>` members)
+3. **Assignable collection-shape fallback** (source side, destination side, or both)
 4. **Collection element-type fallback** (only when both sides are collection shapes)
 
 #### 1) Exact map wins
@@ -461,11 +474,18 @@ Mapify uses the non-nullable map and injects null-safe adaptation.
 
 #### 3) Collection map precedence
 
-For collection properties, Mapify resolves in this order:
+For collection-related resolution, Mapify resolves in this order:
 
-1. exact collection-pair map
-2. assignable collection-pair map (for example `IEnumerable<TSrc> -> IEnumerable<TDest>`)
-3. element map fallback
+1. exact collection pair (`SrcShape -> DstShape`)
+2. assignable collection-shape candidates, using this hierarchy:
+    1. `IList<T>`
+    2. `ICollection<T>`
+    3. `IReadOnlyList<T>`
+    4. `IReadOnlyCollection<T>`
+    5. `IEnumerable<T>`
+3. element map fallback (`SrcElement -> DstElement`) when both sides are collections
+
+Recommendation: when you want a single collection map to work across most concrete collection shapes, register it with `IEnumerable<T>` (for example `IEnumerable<TSrc> -> IEnumerable<TDest>` or `IEnumerable<TSrc> -> Dto`). This map can then be reused for sources like arrays, `List<T>`, `ICollection<T>`, and `IReadOnlyCollection<T>` via assignable collection-shape fallback. If a specific collection shape needs different behavior, register that specific map as well—exact matches and higher-priority shape candidates still win.
 
 ```csharp
 CreateMap<Item, ItemDto>(x => new ItemDto { Value = x.Value + 1 });
@@ -478,7 +498,17 @@ CreateMap<Batch, BatchDto>(); // List<Item> -> List<ItemDto>
 If that map is removed but an `IEnumerable<Item> -> IEnumerable<ItemDto>` map exists, that map is used and materialized to the destination collection type.
 If neither collection map exists, Mapify falls back to `Item -> ItemDto` per element.
 
+Collection-to-single-object fallback is also supported. If only
+`IEnumerable<Item> -> SummaryDto` is registered, Mapify can resolve
+`List<Item> -> SummaryDto`, `ICollection<Item> -> SummaryDto`, etc.
+
+Likewise, if only `IEnumerable<Item> -> IEnumerable<ItemDto>` is registered,
+Mapify can resolve mixed collection shape combinations such as
+`List<Item> -> IReadOnlyCollection<ItemDto>`.
+
 For nullable collection members, Mapify preserves `null` safely for supported query/provider shapes.
+
+When multiple assignable collection candidates match, Mapify picks the highest-ranked candidate from the hierarchy above.
 
 #### 4) Collection fallback + initializer preservation
 

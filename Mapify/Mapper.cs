@@ -2,6 +2,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Collections.Concurrent;
 
 namespace Mapify.NET; 
@@ -200,7 +201,8 @@ public static class Mapper {
             ((Action<TSource, TTarget>)map).Invoke(source, target);
             return;
         }
-        var expression = GetRequiredMap<TSource, TTarget>();
+
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>();
 
         if (expression.Body is not MemberInitExpression) {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
@@ -245,10 +247,46 @@ public static class Mapper {
             return ((Func<TSource, TTarget>)map).Invoke(source);
         }
 
-        var expression = GetRequiredMap<TSource, TTarget>();
+        var expression = GetRequiredRuntimeMap<TSource, TTarget>();
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);
+    }
+
+    private static Expression<Func<TSource, TTarget>> GetRequiredRuntimeMap<TSource, TTarget>() {
+        if (TryCreateRuntimeMapExpression<TSource, TTarget>(TryGetRegisteredMap, null, out var runtimeExpression)) {
+            return runtimeExpression;
+        }
+
+        if (_globalUseDefaultMapIfTypeMapIsMissing) {
+            var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
+            if (_defaultMapCache.TryGetValue(key, out var map)) {
+                return (Expression<Func<TSource, TTarget>>)map;
+            }
+
+            var defaultMap = CreateMap<TSource, TTarget>();
+            _defaultMapCache[key] = defaultMap;
+            return defaultMap;
+        }
+
+        throw new ArgumentException($"Missing type map configuration for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
+    }
+
+    internal static LambdaExpression GetRequiredRuntimeMapUntyped(Type sourceType, Type targetType) {
+        var genericMethod = typeof(Mapper)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Single(m => m.Name == nameof(GetRequiredRuntimeMap)
+                && m.IsGenericMethodDefinition
+                && m.GetGenericArguments().Length == 2
+                && m.GetParameters().Length == 0)
+            .MakeGenericMethod(sourceType, targetType);
+
+        try {
+            return (LambdaExpression)genericMethod.Invoke(null, null)!;
+        } catch (TargetInvocationException ex) when (ex.InnerException != null) {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
     }
     
     /// <summary>
@@ -987,8 +1025,10 @@ public static class Mapper {
                 return false;
             }
         } else {
-            if (!TryBuildImplicitEnumerableElementProjection(itemParam, destinationElementType, out adaptedItemResult, out itemNullCheck)) {
-                return false;
+            if (!TryBuildMappedExpression(itemParam, sourceElementType, destinationElementType, resolver, preferredMapName, out adaptedItemResult, out itemNullCheck)) {
+                if (!TryBuildImplicitEnumerableElementProjection(itemParam, destinationElementType, out adaptedItemResult, out itemNullCheck)) {
+                    return false;
+                }
             }
         }
 
@@ -1135,6 +1175,22 @@ public static class Mapper {
         return true;
     }
 
+    internal static bool TryCreateRuntimeMapExpression<TSource, TTarget>(
+        Func<Type, Type, string?, LambdaExpression?> resolver,
+        string? preferredMapName,
+        out Expression<Func<TSource, TTarget>> expression
+    ) {
+        expression = null!;
+
+        var sourceParam = Expression.Parameter(typeof(TSource), "x");
+        if (!TryBuildMappedExpression(sourceParam, typeof(TSource), typeof(TTarget), resolver, preferredMapName, out var mappedBody, out var sourceNullCheck)) {
+            return false;
+        }
+
+        expression = Expression.Lambda<Func<TSource, TTarget>>(mappedBody, sourceParam);
+        return true;
+    }
+
     private static LambdaExpression? ResolveMapByPrecedence(
         Type sourceType,
         Type destinationType,
@@ -1163,13 +1219,20 @@ public static class Mapper {
         Func<Type, Type, string?, LambdaExpression?> resolver,
         string? preferredMapName
     ) {
-        if (!TryGetEnumerableElementType(sourceType, out _)
-            || !TryGetEnumerableElementType(destinationType, out _)) {
+        var sourceIsCollection = TryGetEnumerableElementType(sourceType, out _);
+        var destinationIsCollection = TryGetEnumerableElementType(destinationType, out _);
+
+        if (!sourceIsCollection && !destinationIsCollection) {
             return null;
         }
 
-        var sourceCandidates = GetCollectionResolutionCandidates(sourceType);
-        var destinationCandidates = GetCollectionResolutionCandidates(destinationType);
+        var sourceCandidates = sourceIsCollection
+            ? GetCollectionResolutionCandidates(sourceType)
+            : [sourceType];
+
+        var destinationCandidates = destinationIsCollection
+            ? GetCollectionResolutionCandidates(destinationType)
+            : [destinationType];
 
         foreach (var sourceCandidate in sourceCandidates) {
             foreach (var destinationCandidate in destinationCandidates) {
@@ -1191,7 +1254,16 @@ public static class Mapper {
         var candidates = new List<Type> { type };
 
         foreach (var @interface in type.GetInterfaces()) {
-            if (@interface.IsGenericType && @interface.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
+            if (!@interface.IsGenericType) {
+                continue;
+            }
+
+            var genericDef = @interface.GetGenericTypeDefinition();
+            if (genericDef == typeof(IList<>)
+                || genericDef == typeof(ICollection<>)
+                || genericDef == typeof(IReadOnlyList<>)
+                || genericDef == typeof(IReadOnlyCollection<>)
+                || genericDef == typeof(IEnumerable<>)) {
                 candidates.Add(@interface);
             }
         }

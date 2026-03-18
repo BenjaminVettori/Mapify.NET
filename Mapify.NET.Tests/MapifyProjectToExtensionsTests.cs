@@ -36,6 +36,34 @@ public class MapifyProjectToExtensionsTests {
     }
 
     [Fact]
+    public void ProjectTo_IEnumerable_Static_ShouldProjectFlatList_WhenOnlyElementMapIsRegistered() {
+        Mapper.AddMap<ProjectSource, ProjectTarget>(x => new ProjectTarget { Value = x.Value + 1 });
+
+        IEnumerable source = new List<ProjectSource> {
+            new ProjectSource { Value = 1 },
+            new ProjectSource { Value = 2 }
+        };
+
+        var projected = source.ProjectTo<ProjectTarget>().ToList();
+
+        Assert.Equal([2, 3], projected.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void ProjectTo_IEnumerable_Instance_ShouldProjectFlatList_WhenOnlyElementMapIsRegistered() {
+        var mapify = new Mapify([new EnumerableProjectProfile()]);
+
+        IEnumerable source = new List<ProjectSource> {
+            new ProjectSource { Value = 1 },
+            new ProjectSource { Value = 2 }
+        };
+
+        var projected = source.ProjectTo<ProjectTarget>(mapify).ToList();
+
+        Assert.Equal([2, 3], projected.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
     public void ProjectTo_IEnumerable_Instance_ShouldProjectItems() {
         var mapify = new Mapify([new EnumerableProjectProfile()]);
         IEnumerable source = new[] {
