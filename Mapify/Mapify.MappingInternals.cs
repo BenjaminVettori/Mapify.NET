@@ -66,6 +66,7 @@ public partial class Mapify {
 
     private static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
         Expression<Func<TSource, TDestination>>? partial,
+        IReadOnlyList<MapBuilderBinding>? mapBuilderBindings,
         Func<Type, Type, string?, LambdaExpression?>? existingMapResolver
     ) {
         var baseParam = Expression.Parameter(typeof(TSource), "x");
@@ -89,6 +90,22 @@ public partial class Mapify {
                 if (binding != null) {
                     existingBindings[binding.Member.Name] = binding;
                 }
+            }
+        }
+
+        if (mapBuilderBindings != null) {
+            foreach (var builderBinding in mapBuilderBindings) {
+                var binding = MapMapBuilderBinding<TSource, TDestination>(builderBinding, baseParam, existingMapResolver, out var destinationProperty, out var isIgnored);
+                if (isIgnored) {
+                    ignoredBindings.Add(destinationProperty.Name);
+                }
+
+                if (binding == null) {
+                    continue;
+                }
+
+                existingBindings[destinationProperty.Name] = binding;
+                ignoredBindings.Remove(destinationProperty.Name);
             }
         }
 
@@ -125,22 +142,73 @@ public partial class Mapify {
         return result;
     }
 
+    private static MemberAssignment? MapMapBuilderBinding<TSource, TDestination>(
+        MapBuilderBinding builderBinding,
+        ParameterExpression sourceParameter,
+        Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
+        out PropertyInfo destinationProperty,
+        out bool isIgnored
+    ) {
+        destinationProperty = GetMapBuilderDestinationProperty<TSource, TDestination>(builderBinding.TargetExpression);
+
+        if (builderBinding.SourceExpression.Parameters.Count != 1 || builderBinding.SourceExpression.Parameters[0].Type != typeof(TSource)) {
+            throw new InvalidOperationException($"DSL map binding for '{typeof(TSource).FullName} -> {typeof(TDestination).FullName}' requires a source selector with exactly one parameter of type '{typeof(TSource).FullName}'.");
+        }
+
+        var sourceExpression = new ParameterReplaceVisitor(builderBinding.SourceExpression.Parameters[0], sourceParameter)
+            .Visit(builderBinding.SourceExpression.Body)!;
+        return MapPartialBinding(destinationProperty, sourceExpression, typeof(TDestination), existingMapResolver, out isIgnored, tryMapExpressionToDestinationProperty: true, dslSourceType: typeof(TSource));
+    }
+
+    private static PropertyInfo GetMapBuilderDestinationProperty<TSource, TDestination>(LambdaExpression destinationExpression) {
+        if (destinationExpression.Parameters.Count != 1 || destinationExpression.Parameters[0].Type != typeof(TDestination)) {
+            throw new InvalidOperationException($"DSL map binding for '{typeof(TSource).FullName} -> {typeof(TDestination).FullName}' requires a destination selector with exactly one parameter of type '{typeof(TDestination).FullName}'.");
+        }
+
+        var destinationBody = UnwrapConvert(destinationExpression.Body);
+        if (destinationBody is not MemberExpression memberExpression
+            || memberExpression.Expression != destinationExpression.Parameters[0]
+            || memberExpression.Member is not PropertyInfo propertyInfo) {
+            throw new InvalidOperationException($"DSL map binding for '{typeof(TSource).FullName} -> {typeof(TDestination).FullName}' requires destination selector to be a direct writable property access (for example: d => d.Property).");
+        }
+
+        if (!propertyInfo.CanWrite) {
+            throw new InvalidOperationException($"DSL map binding for '{typeof(TSource).FullName} -> {typeof(TDestination).FullName}' cannot target non-writable property '{propertyInfo.Name}'.");
+        }
+
+        return propertyInfo;
+    }
+
     private static MemberAssignment? MapPartialBinding(
         MemberAssignment partialBinding,
         Type destinationType,
         Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
-        out bool isIgnored
+        out bool isIgnored,
+        bool tryMapExpressionToDestinationProperty = false,
+        Type? dslSourceType = null
+    ) {
+        return MapPartialBinding(partialBinding.Member, partialBinding.Expression, destinationType, existingMapResolver, out isIgnored, tryMapExpressionToDestinationProperty, dslSourceType);
+    }
+
+    private static MemberAssignment? MapPartialBinding(
+        MemberInfo destinationMember,
+        Expression destinationExpression,
+        Type destinationType,
+        Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
+        out bool isIgnored,
+        bool tryMapExpressionToDestinationProperty = false,
+        Type? dslSourceType = null
     ) {
         isIgnored = false;
 
-        var expr = partialBinding.Expression;
+        var expr = destinationExpression;
 
-        if (TryResolveIgnoreMarker(partialBinding, destinationType, out var ignoredBinding)) {
+        if (TryResolveIgnoreMarker(destinationMember, expr, destinationType, out var ignoredBinding)) {
             isIgnored = true;
             return ignoredBinding;
         }
 
-        if (TryResolveUseMapMarker(partialBinding, existingMapResolver, out var mappedBinding)) {
+        if (TryResolveUseMapMarker(destinationMember, expr, existingMapResolver, out var mappedBinding)) {
             return mappedBinding;
         }
 
@@ -157,17 +225,41 @@ public partial class Mapify {
             expr = Expression.Condition(test, value, binaryExpr.Right);
         }
 
-        return Expression.Bind(partialBinding.Member, expr);
+        if (tryMapExpressionToDestinationProperty && destinationMember is PropertyInfo destinationProperty) {
+            if (!TryAdaptMappedResult(expr, destinationProperty.PropertyType, out var adaptedExpression)) {
+                if (existingMapResolver == null
+                    || !TryBuildMappedExpression(expr, expr.Type, destinationProperty.PropertyType, existingMapResolver, null, out adaptedExpression, out var sourceNullCheck)) {
+                    var mappingTypes = dslSourceType == null
+                        ? destinationType.FullName
+                        : $"{dslSourceType.FullName} -> {destinationType.FullName}";
+                    throw new InvalidOperationException($"DSL map binding for '{mappingTypes}' is missing type map configuration from '{expr.Type.FullName}' to '{destinationProperty.PropertyType.FullName}' for destination property '{destinationProperty.Name}'.");
+                }
+
+                if (sourceNullCheck != null) {
+                    var nullFallback = CreatePropertyDefaultValueExpression(destinationProperty);
+                    if (nullFallback.Type != adaptedExpression.Type && adaptedExpression.Type.IsAssignableFrom(nullFallback.Type)) {
+                        nullFallback = Expression.Convert(nullFallback, adaptedExpression.Type);
+                    }
+
+                    adaptedExpression = Expression.Condition(sourceNullCheck, adaptedExpression, nullFallback);
+                }
+            }
+
+            expr = adaptedExpression;
+        }
+
+        return Expression.Bind(destinationMember, expr);
     }
 
     private static bool TryResolveIgnoreMarker(
-        MemberAssignment partialBinding,
+        MemberInfo destinationMember,
+        Expression destinationExpression,
         Type destinationType,
         out MemberAssignment? mappedBinding
     ) {
         mappedBinding = null;
 
-        var markerCandidate = UnwrapConvert(partialBinding.Expression);
+        var markerCandidate = UnwrapConvert(destinationExpression);
         if (markerCandidate is not MethodCallExpression methodCall) {
             return false;
         }
@@ -180,7 +272,7 @@ public partial class Mapify {
             throw new InvalidOperationException($"{_ignoreMarkerName} does not accept arguments. Use {_ignoreMarkerName}<T>() to ignore a destination property.");
         }
 
-        if (partialBinding.Member is not PropertyInfo destProp) {
+        if (destinationMember is not PropertyInfo destProp) {
             throw new InvalidOperationException($"{_ignoreMarkerName} marker can only be used for property bindings.");
         }
 
@@ -304,13 +396,14 @@ public partial class Mapify {
     }
 
     private static bool TryResolveUseMapMarker(
-        MemberAssignment partialBinding,
+        MemberInfo destinationMember,
+        Expression destinationExpression,
         Func<Type, Type, string?, LambdaExpression?>? existingMapResolver,
         out MemberAssignment mappedBinding
     ) {
         mappedBinding = null!;
 
-        var markerCandidate = UnwrapConvert(partialBinding.Expression);
+        var markerCandidate = UnwrapConvert(destinationExpression);
         if (markerCandidate is not MethodCallExpression methodCall) {
             return false;
         }
@@ -319,7 +412,7 @@ public partial class Mapify {
             return false;
         }
 
-        if (partialBinding.Member is not PropertyInfo destProp) {
+        if (destinationMember is not PropertyInfo destProp) {
             throw new InvalidOperationException($"{_useMapMarkerName} marker can only be used for property bindings.");
         }
 

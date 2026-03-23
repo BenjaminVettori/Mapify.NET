@@ -38,6 +38,38 @@ public class MapifyEfCoreIgnoreMarkerTests {
     }
 
     [Fact]
+    public void IgnoreMarker_ShouldExcludeIgnoredPropertyFromEfCoreSqlProjection_WhenUsingDslMap() {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+
+        var options = new DbContextOptionsBuilder<EfCoreIgnoreMapifyContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var db = new EfCoreIgnoreMapifyContext(options);
+        db.Database.EnsureCreated();
+
+        db.Set<EfCoreProjectionIgnoreEntity>().Add(new EfCoreProjectionIgnoreEntity {
+            Included = "included",
+            IgnoredFromDb = "ignored-db"
+        });
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreProjectionIgnoreDslProfile()
+        ]);
+
+        var query = db.Set<EfCoreProjectionIgnoreEntity>().ProjectTo<EfCoreProjectionIgnoreDto>(mapify);
+        var sql = query.ToQueryString();
+
+        Assert.DoesNotContain("\"IgnoredFromDb\"", sql, StringComparison.Ordinal);
+
+        var projected = query.Single();
+        Assert.Equal("included", projected.Included);
+        Assert.Null(projected.IgnoredFromDb);
+    }
+
+    [Fact]
     public void IgnoreMarker_ShouldExcludeIgnoredPropertyFromEfCoreSqlProjection_WhenUsingProjectTo() {
         using var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
@@ -122,6 +154,13 @@ public class MapifyEfCoreIgnoreMarkerTests {
             CreateMap<EfCoreProjectionIgnoreEntity, EfCoreProjectionIgnoreDto>(x => new EfCoreProjectionIgnoreDto {
                 IgnoredFromDb = Ignore<string?>()
             });
+        }
+    }
+
+    private sealed class EfCoreProjectionIgnoreDslProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreProjectionIgnoreEntity, EfCoreProjectionIgnoreDto>()
+                .Map(d => d.IgnoredFromDb, _ => Ignore<string?>());
         }
     }
 }

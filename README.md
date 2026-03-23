@@ -151,6 +151,45 @@ var queryMapper = provider.GetMapify("queries");
 `CreateMap<TSource, TTarget>(...)` inside `MapifyProfile` is registration-only.
 Map building is deferred until all profiles are registered, so unordered registrations are supported.
 
+You can also chain a minimal per-property DSL from `CreateMap`.
+The DSL uses **destination first**, then source/value:
+
+```csharp
+CreateMap<Person, PersonDto>()
+    .Map(d => d.Name, s => s.FirstName + " " + s.LastName)
+    .Map(d => d.MainAddress, s => s.MainAddress); // uses existing Address -> AddressDto map fallback when needed
+```
+
+You can combine initializer + DSL as well:
+
+```csharp
+CreateMap<Person, PersonDto>(s => new PersonDto {
+    Name = s.FirstName
+})
+    .Map(d => d.Name, s => s.FirstName + " " + s.LastName);
+```
+
+Binding precedence is:
+
+1. initializer bindings (`new TTarget { ... }`)
+2. chained DSL `.Map(...)` bindings (override initializer when same destination member is mapped)
+3. implicit/default member mapping
+4. destination fallback values
+
+DSL value expressions run through the same marker pipeline, so markers like `UseMap`, `Ignore`, and `Parameter` also work in `.Map(...)`.
+
+Example with markers in DSL mappings:
+
+```csharp
+CreateMap<Address, AddressDto>();
+
+CreateMap<Person, PersonDto>()
+    .Map(d => d.Name, s => s.FirstName + " " + s.LastName)
+    .Map(d => d.MainAddress, s => UseMap<Address, AddressDto>(s.MainAddress))
+    .Map(d => d.InternalCode, _ => Ignore<string>())
+    .Map(d => d.ScoreCategory, s => s.Score >= Parameter<int>("minScore") ? "Pass" : "Fail");
+```
+
 When you need explicit nested map usage in a profile initializer, use `UseMap<TSource, TTarget>(x.SourceMember)`.
 During build, Mapify resolves the dependency to the registered map (including nullable variants).
 

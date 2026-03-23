@@ -85,26 +85,31 @@ public partial class Mapify : IMapify, IMapifyConfigurator {
         _recursiveMapBuildHardCap = value;
     }
 
-    void IMapifyConfigurator.CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial) {
-        AddPendingMap(null, partial);
+    MapifyMapBuilder<TSource, TTarget> IMapifyConfigurator.CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial) {
+        return AddPendingMap(null, partial);
     }
 
-    void IMapifyConfigurator.CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial) {
+    MapifyMapBuilder<TSource, TTarget> IMapifyConfigurator.CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial) {
         if (string.IsNullOrWhiteSpace(name)) {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        AddPendingMap(name, partial);
+        return AddPendingMap(name, partial);
     }
 
-    private void AddPendingMap<TSource, TTarget>(string? name, Expression<Func<TSource, TTarget>>? partial) {
+    private MapifyMapBuilder<TSource, TTarget> AddPendingMap<TSource, TTarget>(string? name, Expression<Func<TSource, TTarget>>? partial) {
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
         if (_pendingRegistrations.ContainsKey(key) || _converters.ContainsKey(key)) {
             var mappingScope = name == null ? "default" : $"named '{name}'";
             throw new ArgumentException($"There already exists a {mappingScope} mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}). There can only be one mapping per name and source/target combination.");
         }
 
-        _pendingRegistrations[key] = new PendingMapRegistration(partial);
+        var registration = new PendingMapRegistration(partial);
+        _pendingRegistrations[key] = registration;
+
+        return new MapifyMapBuilder<TSource, TTarget>((targetExpression, sourceExpression) => {
+            registration.AddBinding(targetExpression, sourceExpression);
+        });
     }
 
     private void BuildRegisteredMaps() {
@@ -152,7 +157,7 @@ public partial class Mapify : IMapify, IMapifyConfigurator {
             } else {
                 created = null!;
                 for (var i = 0; i < recursiveBuildDepth; i++) {
-                    created = CreateMapFromPending(key.SourceType, key.TargetType, key.Name, pending.Partial);
+                    created = CreateMapFromPending(key.SourceType, key.TargetType, key.Name, pending);
                     SetMapUntyped(created, key.Name, compileCaches: false);
                 }
             }
@@ -219,14 +224,14 @@ public partial class Mapify : IMapify, IMapifyConfigurator {
     private static Expression<Func<TSource, TTarget>> CreateRecursiveFallbackMapGeneric<TSource, TTarget>()
         => _ => default!;
 
-    private LambdaExpression CreateMapFromPending(Type sourceType, Type targetType, string? mapName, LambdaExpression? partial) {
+    private LambdaExpression CreateMapFromPending(Type sourceType, Type targetType, string? mapName, PendingMapRegistration pending) {
         var method = typeof(Mapify).GetMethod(nameof(CreateMapFromPendingGeneric), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var generic = method.MakeGenericMethod(sourceType, targetType);
-        return (LambdaExpression)generic.Invoke(this, [mapName, partial])!;
+        return (LambdaExpression)generic.Invoke(this, [mapName, pending])!;
     }
 
-    private Expression<Func<TSource, TTarget>> CreateMapFromPendingGeneric<TSource, TTarget>(string? mapName, LambdaExpression? partial)
-        => CreateMap((Expression<Func<TSource, TTarget>>?)partial, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName ?? mapName));
+    private Expression<Func<TSource, TTarget>> CreateMapFromPendingGeneric<TSource, TTarget>(string? mapName, PendingMapRegistration pending)
+        => CreateMap((Expression<Func<TSource, TTarget>>?)pending.Partial, pending.Bindings, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName ?? mapName));
 
     private LambdaExpression? ResolveExistingMapForBuild(Type sourceType, Type targetType, string? mapName) {
         if (!string.IsNullOrWhiteSpace(mapName)) {
@@ -427,7 +432,7 @@ public partial class Mapify : IMapify, IMapifyConfigurator {
                 return ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
             }
 
-            var defaultMap = CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
+            var defaultMap = CreateMap<TSource, TTarget>(null, null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
             _defaultMapCache[defaultCacheKey] = defaultMap;
             return ApplyParameters(defaultMap, parameters);
         }
@@ -674,7 +679,7 @@ public partial class Mapify : IMapify, IMapifyConfigurator {
                 return ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
             }
 
-            var defaultMap = CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
+            var defaultMap = CreateMap<TSource, TTarget>(null, null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
             _defaultMapCache[defaultCacheKey] = defaultMap;
             return ApplyParameters(defaultMap, parameters);
         }
@@ -751,6 +756,18 @@ public partial class Mapify : IMapify, IMapifyConfigurator {
 
     private sealed class PendingMapRegistration(LambdaExpression? partial) {
         public LambdaExpression? Partial { get; } = partial;
+
+        public List<MapBuilderBinding> Bindings { get; } = [];
+
+        public void AddBinding(LambdaExpression targetExpression, LambdaExpression sourceExpression) {
+            Bindings.Add(new MapBuilderBinding(targetExpression, sourceExpression));
+        }
+    }
+
+    private sealed class MapBuilderBinding(LambdaExpression targetExpression, LambdaExpression sourceExpression) {
+        public LambdaExpression TargetExpression { get; } = targetExpression;
+
+        public LambdaExpression SourceExpression { get; } = sourceExpression;
     }
 
     private enum MapBuildState {
