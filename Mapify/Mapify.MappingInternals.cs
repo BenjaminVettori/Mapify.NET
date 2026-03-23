@@ -105,7 +105,9 @@ public partial class Mapify {
                 }
 
                 existingBindings[destinationProperty.Name] = binding;
-                ignoredBindings.Remove(destinationProperty.Name);
+                if (!isIgnored) {
+                    ignoredBindings.Remove(destinationProperty.Name);
+                }
             }
         }
 

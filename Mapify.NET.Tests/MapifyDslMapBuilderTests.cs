@@ -108,6 +108,84 @@ public class MapifyDslMapBuilderTests {
     }
 
     [Fact]
+    public void MapBuilder_ShouldSupportRequiredTargetMembers_WhenOnlyOnePropertyIsMappedExplicitly() {
+        var mapify = new Mapify([
+            new RequiredTargetDslProfile()
+        ]);
+
+        var result = mapify.Map<RequiredTargetDslSource, RequiredTargetDslTarget>(new RequiredTargetDslSource {
+            Name = "alice"
+        });
+
+        Assert.Equal("alice", result.Name);
+        Assert.Equal(0, result.RequiredWithoutSource);
+    }
+
+    [Fact]
+    public void MapBuilder_ShouldUseEmptyFallback_ForUnmappedRequiredCollection() {
+        var mapify = new Mapify([
+            new RequiredCollectionDslProfile()
+        ]);
+
+        var result = mapify.Map<RequiredCollectionSource, RequiredCollectionTarget>(new RequiredCollectionSource {
+            Name = "alice"
+        });
+
+        Assert.Equal("alice", result.Name);
+        Assert.NotNull(result.Tags);
+        Assert.Empty(result.Tags);
+    }
+
+    [Fact]
+    public void MapBuilder_ShouldApplyFallback_ForIgnoredRequiredMember() {
+        var mapify = new Mapify([
+            new RequiredIgnoreDslProfile()
+        ]);
+
+        var result = mapify.Map<RequiredIgnoreSource, RequiredIgnoreTarget>(new RequiredIgnoreSource {
+            Name = "alice",
+            InternalCode = 99
+        });
+
+        Assert.Equal("alice", result.Name);
+        Assert.Equal(0, result.InternalCode);
+    }
+
+    [Fact]
+    public void MapBuilder_ShouldPreserveRequiredInitializer_WhenUnmapped() {
+        var mapify = new Mapify([
+            new RequiredInitializerDslProfile()
+        ]);
+
+        var result = mapify.Map<RequiredInitializerSource, RequiredInitializerTarget>(new RequiredInitializerSource {
+            Name = "alice"
+        });
+
+        Assert.Equal("alice", result.Name);
+        Assert.Equal("initialized", result.Code);
+    }
+
+    [Fact]
+    public void MapBuilder_MapToExisting_ShouldKeepIgnoredRequiredMemberUnchanged() {
+        var mapify = new Mapify([
+            new RequiredIgnoreDslProfile()
+        ]);
+
+        var existing = new RequiredIgnoreTarget {
+            Name = "old-name",
+            InternalCode = 123
+        };
+
+        mapify.Map(new RequiredIgnoreSource {
+            Name = "new-name",
+            InternalCode = 999
+        }, existing);
+
+        Assert.Equal("new-name", existing.Name);
+        Assert.Equal(123, existing.InternalCode);
+    }
+
+    [Fact]
     public void MapBuilder_ShouldSupportNamedProjectToMarker() {
         var mapify = new Mapify([
             new NamedProjectToDslProfile()
@@ -314,6 +392,77 @@ public class MapifyDslMapBuilderTests {
 
             CreateMap<ProjectToDslSource, ProjectToDslTarget>()
                 .Map(d => d.Children, s => s.Children.ProjectTo<ProjectToDslChildTarget>().ToArray());
+        }
+    }
+
+    private sealed class RequiredTargetDslSource {
+        public required string Name { get; set; }
+    }
+
+    private sealed class RequiredTargetDslTarget {
+        public required string Name { get; set; }
+
+        public required int RequiredWithoutSource { get; set; }
+    }
+
+    private sealed class RequiredTargetDslProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<RequiredTargetDslSource, RequiredTargetDslTarget>()
+                .Map(d => d.Name, s => s.Name);
+        }
+    }
+
+    private sealed class RequiredCollectionSource {
+        public required string Name { get; set; }
+    }
+
+    private sealed class RequiredCollectionTarget {
+        public required string Name { get; set; }
+
+        public required List<string> Tags { get; set; } = new List<string>();
+    }
+
+    private sealed class RequiredCollectionDslProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<RequiredCollectionSource, RequiredCollectionTarget>()
+                .Map(d => d.Name, s => s.Name);
+        }
+    }
+
+    private sealed class RequiredIgnoreSource {
+        public required string Name { get; set; }
+
+        public int InternalCode { get; set; }
+    }
+
+    private sealed class RequiredIgnoreTarget {
+        public required string Name { get; set; }
+
+        public required int InternalCode { get; set; }
+    }
+
+    private sealed class RequiredIgnoreDslProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<RequiredIgnoreSource, RequiredIgnoreTarget>()
+                .Map(d => d.Name, s => s.Name)
+                .Map(d => d.InternalCode, _ => Ignore<int>());
+        }
+    }
+
+    private sealed class RequiredInitializerSource {
+        public required string Name { get; set; }
+    }
+
+    private sealed class RequiredInitializerTarget {
+        public required string Name { get; set; }
+
+        public required string Code { get; set; } = "initialized";
+    }
+
+    private sealed class RequiredInitializerDslProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<RequiredInitializerSource, RequiredInitializerTarget>()
+                .Map(d => d.Name, s => s.Name);
         }
     }
 
