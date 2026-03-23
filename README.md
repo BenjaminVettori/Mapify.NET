@@ -3,7 +3,7 @@
 [![Tests](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/tests.yml)
 [![Build](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/BenjaminVettori/Mapify.NET/actions/workflows/build.yml)
 
-Mapify is a lightweight .NET library for creating static mapping expressions for C# objects. It bridges the gap between in-memory object mapping and LINQ projections (e.g., Entity Framework), allowing you to reuse the same mapping logic consistently across your application.
+Mapify is a lightweight .NET library for creating mapping expressions for C# objects. It bridges the gap between in-memory object mapping and LINQ projections (e.g., Entity Framework), allowing you to reuse the same mapping logic consistently across your application.
 
 ## Features ✨
 
@@ -257,15 +257,6 @@ var people = await _dbContext.Persons
     .ToArrayAsync(cancellationToken);
 ```
 
-If you use the static `Mapper` API (`Mapper.AddMap(...)`), you can call:
-
-```csharp
-var people = _dbContext.Persons
-    .ProjectTo<PersonDto>()
-    .OrderBy(x => x.Name)
-    .ToArray();
-```
-
 `ProjectTo` uses the same runtime fallback behavior as `Map`, including:
 
 - collection-shape fallback (for example `IEnumerable<TSrc>` map reused for `List<TSrc>`)
@@ -413,8 +404,6 @@ var projected = dbContext.Requests
     .ToArray();
 ```
 
-The static `Mapper` API does not provide parameterized `Map` / `GetMap` / `GetRequiredMap` / `ProjectTo` overloads.
-
 Notes: parameter names are matched by key and values must be convertible to the `T` used in `Parameter<T>(name)`.
 
 ## Detailed Functionality 📚
@@ -561,72 +550,7 @@ Rules:
 * Each `(TSource, TTarget, Name)` combination must be unique.
 * `UseMap` can target named maps via `UseMap<TSource, TTarget>("Name", sourceExpression)`.
 
-### Static API (advanced scenarios)
-
-The static `Mapper` API is still fully supported, but typically used in advanced scenarios.
-
-#### Static map declarations
-
-```csharp
-using Mapify.NET;
-using System.Linq.Expressions;
-
-public static class PersonMappings {
-    public static readonly Expression<Func<Person, PersonDto>> PersonToPersonDto =
-        Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
-            Name = $"{p.FirstName} {p.LastName}",
-            MainAddress = AddressMappings.AddressToAddressDto.Invoke(p.MainAddress)
-        });
-}
-
-public static class AddressMappings {
-    public static readonly Expression<Func<Address, AddressDto>> AddressToAddressDto =
-        Mapper.CreateMap<Address, AddressDto>();
-}
-```
-
-#### Static API with Entity Framework + LINQKit
-
-If your static expressions use `.Invoke(...)`, combine with LINQKit and `.AsExpandable()`.
-
-```csharp
-public async Task<IEnumerable<PersonDto>> GetPersonDtosAsync(int skip, int take, CancellationToken cancellationToken = default) {
-    return await _dbContext.Persons
-        .AsExpandable()
-        .Select(PersonMappings.PersonToPersonDto)
-        .OrderBy(x => x.Name)
-        .Skip(skip)
-        .Take(take)
-        .ToArrayAsync(cancellationToken);
-}
-```
-
-`AsExpandable()` is the key piece that lets EF translate expressions that use `.Invoke()`.
-
-Use the package that matches your scenario:
-
-- `LinqKit.Core`: expression composition utilities (`PredicateBuilder`, `Invoke`, `Expand`) without EF integration.
-- `LinqKit` or `LinqKit.EntityFramework`: for Entity Framework 6.x.
-- `LinqKit.Microsoft.EntityFrameworkCore`: for Entity Framework Core.
-
-For EF Core, the package ID stays the same (`LinqKit.Microsoft.EntityFrameworkCore`), but the major version should match EF Core major.
-
-### Global Configuration & Static Maps
-
-You can register mappings globally to use the static `Mapper.Map` convenience methods.
-
-```csharp
-// Register a map globally
-Mapper.AddMap(PersonMappings.PersonToPersonDto);
-
-// Or create and add in one step
-Mapper.CreateAndAddMap<Person, PersonDto>(p => new PersonDto { ... });
-
-// Use the global map anywhere
-var dto = Mapper.Map<Person, PersonDto>(person);
-```
-
-### Mapping to existing instances (instance + static)
+### Mapping to existing instances
 
 `Map(source, target)` updates a provided target instance in-place only when the selected map expression is an object initializer (`MemberInit`).
 
@@ -637,9 +561,6 @@ CreateMap<Person, PersonDto>(p => new PersonDto { Name = p.FirstName });
 var dto1 = new PersonDto();
 mapper.Map(person, dto1);
 
-// static mapper
-var dto2 = new PersonDto();
-Mapper.Map(person, dto2);
 ```
 
 Implementation note: Mapify converts initializer bindings into assignments (for example `target.Name = ...`) and compiles them as `Action<TSource, TTarget>`. If the map returns a value directly (for example `CreateMap<User, string>(u => "User" + u.Id)`), `Map(source, target)` throws `NotSupportedException`.
@@ -651,11 +572,11 @@ For value mappings, use `Map(source)` and assign the returned value.
 Mapify also supports mappings where the expression returns a value directly (not `new TTarget { ... }`).
 
 ```csharp
-Mapper.AddMap<Person, string>(x => x.FirstName);
-Mapper.AddMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
+CreateMap<Person, string>(x => x.FirstName);
+CreateMap<SourceStatus, TargetStatus>(x => x == SourceStatus.Active ? TargetStatus.Enabled : TargetStatus.Disabled);
 
-var name = Mapper.Map<Person, string>(person);
-var status = Mapper.Map<SourceStatus, TargetStatus>(SourceStatus.Active);
+var name = mapify.Map<Person, string>(person);
+var status = mapify.Map<SourceStatus, TargetStatus>(SourceStatus.Active);
 ```
 
 > Note: value mappings are supported for `Map(source)` only. `Map(source, target)` requires an object-initializer mapping.
@@ -665,7 +586,7 @@ var status = Mapper.Map<SourceStatus, TargetStatus>(SourceStatus.Active);
 You can provide a partial initializer to override specific properties. Mapify also rewrites null-coalescing operators (`??`) to conditional expressions (`x != null ? x : y`) to ensure compatibility with all LINQ providers (some EF versions struggle with `??`).
 
 ```csharp
-Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
+CreateMap<Person, PersonDto>(p => new PersonDto {
     // Explicit override
     Name = p.FirstName + " " + p.LastName,
     
@@ -678,61 +599,40 @@ Mapper.CreateMap<Person, PersonDto>(p => new PersonDto {
 
 *   **Compiled Delegates**: Accessors are compiled to delegates.
 *   **Strategy**:
-    *   **Extension Method (`.Map()`)**: Caches the compiled delegate for that specific expression instance.
-    *   **Static `Mapper.Map`**: Uses a global cache.
-        *   **Priority**: Explicitly added maps (`AddMap`) take precedence over implicitly generated ones.
-        *   **Auto-Cache**: If global fallback is enabled via `Mapper.UseDefaultMapIfTypeMapIsMissing(true)` before adding a custom map, a default map is generated and cached. Calling `AddMap` later **overwrites** this cache entry with your custom definition.
+    *   **Mapify instance**: Caches compiled delegates per mapper instance.
+    *   **Expression extension (`expression.Map(...)`)**: Optional per-expression delegate caching.
 
 ## Advanced Usage 🛠️
 
 For advanced scenarios, Mapify exposes several lower-level methods.
 
-### Compiling Mappers Manually
-
-If you need high-performance bulk mapping to **existing** objects and want to manage the delegate lifecycle yourself (referencing `Action<TSource, TTarget>`), you can use `CompileMapper`.
-
-```csharp
-// Get the map expression
-var mapExpr = PersonMappings.PersonToPersonDto;
-
-// Compile to an Action<Person, PersonDto>
-Action<Person, PersonDto> mapAction = Mapper.CompileMapper(mapExpr);
-
-// Use it in a hot loop (zero dictionary lookups)
-var target = new PersonDto();
-foreach (var item in largeCollection) {
-    mapAction(item, target);
-    // ...
-}
-```
-
 ### Retrieving Maps
 
-You can retrieve registered maps using `GetMap`. This is useful in generic or dynamic contexts where you don't have direct access to the static field.
+You can retrieve registered maps using `GetMap`. This is useful in generic or dynamic contexts.
 `GetMap` returns `null` if no map exists and default-map fallback is disabled.
 If you want throwing behavior, use `GetRequiredMap`.
 
 ```csharp
 // Retrieve a registered map (or null)
-var mapExpr = Mapper.GetMap<Person, PersonDto>();
+var mapExpr = mapify.GetMap<Person, PersonDto>();
 
-// Enable global fallback once (if desired)
-Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+// Enable per-instance fallback (if desired)
+mapify.UseDefaultMapIfTypeMapIsMissing(true);
 
 // Then GetMap/GetRequiredMap can use generated default maps when missing
-var fallbackMapExpr = Mapper.GetMap<Person, PersonDto>();
+var fallbackMapExpr = mapify.GetMap<Person, PersonDto>();
 
 // Throw if the map is missing
-var requiredMapExpr = Mapper.GetRequiredMap<Person, PersonDto>();
+var requiredMapExpr = mapify.GetRequiredMap<Person, PersonDto>();
 ```
 
 ### Strict Mode Configuration
 
-By default, strict mode is **enabled** for global maps, meaning `Mapper.Map<S, T>(src)` throws if no map is registered. You can disable this to allow automatic fallback to default maps globally, though explicit registration is recommended for performance and control.
+By default, strict mode is **enabled**, meaning `mapify.Map<S, T>(src)` throws if no map is registered. You can disable this per mapper instance to allow automatic fallback to default maps, though explicit registration is recommended for performance and control.
 
 ```csharp
 // Allow implicit generation of default maps if no custom map is found
-Mapper.UseDefaultMapIfTypeMapIsMissing(true);
+mapify.UseDefaultMapIfTypeMapIsMissing(true);
 ```
 
 ## Contributing 🤝

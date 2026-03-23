@@ -1,16 +1,11 @@
 namespace Mapify.NET.Tests.EFCore;
 
 public class MapifyEfCoreDefaultValueBehaviorTests {
-    public MapifyEfCoreDefaultValueBehaviorTests() {
-        Mapper.UseDefaultMapIfTypeMapIsMissing(false);
-        Mapper.ClearMappings();
-    }
-
     [Fact]
     public void CreateMap_ShouldKeepNull_ForNullableCollection_WhenSourceIsNull() {
-        var map = Mapper.CreateMap<EfCoreNullableCollectionSource, EfCoreNullableCollectionTarget>();
+        var mapify = new Mapify([new EfCoreNullableCollectionProfile()]);
 
-        var mapped = map.Map(new EfCoreNullableCollectionSource {
+        var mapped = mapify.Map<EfCoreNullableCollectionSource, EfCoreNullableCollectionTarget>(new EfCoreNullableCollectionSource {
             Numbers = null
         });
 
@@ -19,9 +14,9 @@ public class MapifyEfCoreDefaultValueBehaviorTests {
 
     [Fact]
     public void CreateMap_ShouldUseEmpty_ForNonNullableCollection_WhenSourceIsNull() {
-        var map = Mapper.CreateMap<EfCoreNullableCollectionSource, EfCoreNonNullableCollectionTarget>();
+        var mapify = new Mapify([new EfCoreNonNullableCollectionProfile()]);
 
-        var mapped = map.Map(new EfCoreNullableCollectionSource {
+        var mapped = mapify.Map<EfCoreNullableCollectionSource, EfCoreNonNullableCollectionTarget>(new EfCoreNullableCollectionSource {
             Numbers = null
         });
 
@@ -31,9 +26,9 @@ public class MapifyEfCoreDefaultValueBehaviorTests {
 
     [Fact]
     public void CreateMap_ShouldUseEmpty_ForRequiredCollection_WhenSourceIsNull() {
-        var map = Mapper.CreateMap<EfCoreNullableCollectionSource, EfCoreRequiredCollectionTarget>();
+        var mapify = new Mapify([new EfCoreRequiredCollectionProfile()]);
 
-        var mapped = map.Map(new EfCoreNullableCollectionSource {
+        var mapped = mapify.Map<EfCoreNullableCollectionSource, EfCoreRequiredCollectionTarget>(new EfCoreNullableCollectionSource {
             Numbers = null
         });
 
@@ -43,9 +38,9 @@ public class MapifyEfCoreDefaultValueBehaviorTests {
 
     [Fact]
     public void CreateMap_ShouldPreserveInitializer_ForNonNullableCollection_WhenSourcePropertyIsMissing() {
-        var map = Mapper.CreateMap<EfCoreSourceWithoutCollection, EfCoreInitializedCollectionTarget>();
+        var mapify = new Mapify([new EfCoreInitializedCollectionProfile()]);
 
-        var mapped = map.Map(new EfCoreSourceWithoutCollection {
+        var mapped = mapify.Map<EfCoreSourceWithoutCollection, EfCoreInitializedCollectionTarget>(new EfCoreSourceWithoutCollection {
             Id = 5
         });
 
@@ -55,9 +50,9 @@ public class MapifyEfCoreDefaultValueBehaviorTests {
 
     [Fact]
     public void CreateMap_ShouldUseEmpty_ForUninitializedNonNullableCollection_WhenSourcePropertyIsMissing() {
-        var map = Mapper.CreateMap<EfCoreSourceWithoutCollection, EfCoreUninitializedCollectionTarget>();
+        var mapify = new Mapify([new EfCoreUninitializedCollectionProfile()]);
 
-        var mapped = map.Map(new EfCoreSourceWithoutCollection {
+        var mapped = mapify.Map<EfCoreSourceWithoutCollection, EfCoreUninitializedCollectionTarget>(new EfCoreSourceWithoutCollection {
             Id = 5
         });
 
@@ -94,5 +89,25 @@ public class MapifyEfCoreDefaultValueBehaviorTests {
     private sealed class EfCoreUninitializedCollectionTarget {
         public int Id { get; set; }
         public List<int> Numbers { get; set; } = null!;
+    }
+
+    private sealed class EfCoreNullableCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<EfCoreNullableCollectionSource, EfCoreNullableCollectionTarget>();
+    }
+
+    private sealed class EfCoreNonNullableCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<EfCoreNullableCollectionSource, EfCoreNonNullableCollectionTarget>();
+    }
+
+    private sealed class EfCoreRequiredCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<EfCoreNullableCollectionSource, EfCoreRequiredCollectionTarget>();
+    }
+
+    private sealed class EfCoreInitializedCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<EfCoreSourceWithoutCollection, EfCoreInitializedCollectionTarget>();
+    }
+
+    private sealed class EfCoreUninitializedCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<EfCoreSourceWithoutCollection, EfCoreUninitializedCollectionTarget>();
     }
 }

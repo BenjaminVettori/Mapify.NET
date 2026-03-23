@@ -7,6 +7,28 @@ namespace Mapify.NET;
 /// Extension methods for projecting non-generic and generic query/sequence sources to mapped target types.
 /// </summary>
 public static class MapifyProjectToExtensions {
+    /// <summary>
+    /// Marker overload intended for use inside map expressions.
+    /// For runtime projections, use <c>query.ProjectTo&lt;TTarget&gt;(mapify)</c>.
+    /// </summary>
+    /// <typeparam name="TTarget">The target projection type.</typeparam>
+    /// <param name="source">The source query.</param>
+    /// <returns>Never returns; this overload always throws.</returns>
+    /// <exception cref="InvalidOperationException">Always thrown for direct runtime use.</exception>
+    public static IQueryable<TTarget> ProjectTo<TTarget>(this IQueryable source)
+        => throw new InvalidOperationException($"{nameof(ProjectTo)} without an {nameof(IMapify)} instance is a marker-only overload for {nameof(MapifyProfile)} expressions. Use query.ProjectTo<TTarget>(mapify) at runtime.");
+
+    /// <summary>
+    /// Marker overload intended for use inside map expressions.
+    /// For runtime projections, use <c>sequence.ProjectTo&lt;TTarget&gt;(mapify)</c>.
+    /// </summary>
+    /// <typeparam name="TTarget">The target projection type.</typeparam>
+    /// <param name="source">The source sequence.</param>
+    /// <returns>Never returns; this overload always throws.</returns>
+    /// <exception cref="InvalidOperationException">Always thrown for direct runtime use.</exception>
+    public static IEnumerable<TTarget> ProjectTo<TTarget>(this IEnumerable source)
+        => throw new InvalidOperationException($"{nameof(ProjectTo)} without an {nameof(IMapify)} instance is a marker-only overload for {nameof(MapifyProfile)} expressions. Use sequence.ProjectTo<TTarget>(mapify) at runtime.");
+
     private static void ValidateRuntimeParameters(IReadOnlyDictionary<string, object?> parameters) {
         if (parameters == null) {
             throw new ArgumentNullException(nameof(parameters));
@@ -16,24 +38,6 @@ public static class MapifyProjectToExtensions {
             throw new ArgumentException("At least one runtime parameter must be provided when using a parameterized overload.", nameof(parameters));
         }
     }
-
-    /// <summary>
-    /// Projects a non-generic query to <typeparamref name="TTarget"/> using the static mapper configuration.
-    /// </summary>
-    /// <typeparam name="TTarget">The target projection type.</typeparam>
-    /// <param name="source">The source query.</param>
-    /// <returns>A projected query of <typeparamref name="TTarget"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is null.</exception>
-    public static IQueryable<TTarget> ProjectTo<TTarget>(this IQueryable source) {
-        if (source == null) {
-            throw new ArgumentNullException(nameof(source));
-        }
-
-        var mapExpression = GetQueryMapExpression(() => GetStaticRuntimeMapExpression(source.ElementType, typeof(TTarget)));
-        return BuildProjectedQuery<TTarget>(source, mapExpression);
-    }
-
-    
 
     /// <summary>
     /// Projects a non-generic query to <typeparamref name="TTarget"/> using an instance mapper.
@@ -148,28 +152,6 @@ public static class MapifyProjectToExtensions {
     /// <exception cref="InvalidOperationException">Always thrown for direct runtime use.</exception>
     public static IQueryable<TTarget> ProjectTo<TTarget>(this IQueryable source, string name)
         => throw new InvalidOperationException($"{nameof(ProjectTo)} with a map name requires an {nameof(IMapify)} instance. Use query.ProjectTo<TTarget>(mapify, name). Inside {nameof(MapifyProfile)} CreateMap expressions this overload is used as a marker and is resolved during map creation.");
-
-    /// <summary>
-    /// Projects a non-generic sequence to <typeparamref name="TTarget"/> using the static mapper configuration.
-    /// </summary>
-    /// <typeparam name="TTarget">The target projection type.</typeparam>
-    /// <param name="source">The source sequence.</param>
-    /// <returns>A projected sequence of <typeparamref name="TTarget"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is null.</exception>
-    public static IEnumerable<TTarget> ProjectTo<TTarget>(this IEnumerable source) {
-        if (source == null) {
-            throw new ArgumentNullException(nameof(source));
-        }
-
-        var sourceElementType = GetEnumerableElementType(source.GetType());
-        var method = typeof(MapifyProjectToExtensions)
-            .GetMethod(nameof(ProjectToEnumerableCoreStatic), BindingFlags.Static | BindingFlags.NonPublic)!
-            .MakeGenericMethod(sourceElementType, typeof(TTarget));
-
-        return (IEnumerable<TTarget>)method.Invoke(null, [source])!;
-    }
-
-    
 
     /// <summary>
     /// Projects a non-generic sequence to <typeparamref name="TTarget"/> using an instance mapper.
@@ -323,9 +305,6 @@ public static class MapifyProjectToExtensions {
         }
     }
 
-    private static LambdaExpression GetStaticRuntimeMapExpression(Type sourceType, Type targetType)
-        => Mapper.GetRequiredRuntimeMapUntyped(sourceType, targetType);
-
     private static LambdaExpression GetInstanceRuntimeMapExpression(
         Type sourceType,
         Type targetType,
@@ -403,16 +382,6 @@ public static class MapifyProjectToExtensions {
 
         return (LambdaExpression)genericMethod.Invoke(mapify, [name, parameters])!;
     }
-
-    private static IEnumerable<TTarget> ProjectToEnumerableCoreStatic<TSource, TTarget>(IEnumerable source) {
-        var map = ((Expression<Func<TSource, TTarget>>)GetStaticRuntimeMapExpression(typeof(TSource), typeof(TTarget))).Compile();
-        return source.Cast<TSource>().Select(map);
-    }
-
-    // Removed: static helper for parameterized enumerable projection.
-    // Parameterized static projections must be performed by calling
-    // `Mapper.ApplyParameters(Mapper.GetRequiredMap<TSource, TTarget>(), parameters)`
-    // and then compiling/using the resulting expression.
 
     private static IEnumerable<TTarget> ProjectToEnumerableCoreInstance<TSource, TTarget>(IEnumerable source, IMapify mapify) {
         var map = ((Expression<Func<TSource, TTarget>>)GetInstanceRuntimeMapExpression(typeof(TSource), typeof(TTarget), mapify)).Compile();

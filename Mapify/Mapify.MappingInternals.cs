@@ -1,16 +1,12 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
-using System.Collections.Concurrent;
 
-namespace Mapify.NET; 
-/// <summary>
-/// Static mapper API for registering and executing mappings.
-/// </summary>
-public static class Mapper {
+namespace Mapify.NET;
 
+public partial class Mapify {
     private const string _useMapMarkerName = "UseMap";
 
     private const string _ignoreMarkerName = "Ignore";
@@ -19,142 +15,9 @@ public static class Mapper {
 
     private const string _parameterMarkerName = "Parameter";
 
-    private static bool _globalUseDefaultMapIfTypeMapIsMissing = false;
-
-    /// <summary>
-    /// Configures whether a default map should be used if no type map was added with <see cref="AddMap{TSource, TTarget}(Expression{Func{TSource, TTarget}})"/>.
-    /// Be default, this is set to false, meaning that an exception will be thrown if no type map is found.
-    /// </summary>
-    public static void UseDefaultMapIfTypeMapIsMissing(bool value) {
-        _globalUseDefaultMapIfTypeMapIsMissing = value;
-    }
-
-    /// <summary>
-    /// Clears all mappings and compiled delegates.
-    /// </summary>
-    public static void ClearMappings() {
-        _converters.Clear();
-        _defaultMapCache.Clear();
-        _compiledMapToExistingCache.Clear();
-        _compiledMapToNewCache.Clear();
-        _compiledSpecificMapToExistingCache.Clear();
-        _compiledSpecificMapToNewCache.Clear();
-        _initializedPropertyCache.Clear();
-    }
-
-    /// <summary>
-    /// Stores converters added with <see cref="AddMap{TSource, TTarget}(Expression{Func{TSource, TTarget}})"/> which are then returned by <see cref="GetMap{TSource, TTarget}(bool)"/>
-    /// </summary>
-    private static readonly Dictionary<Tuple<Type, Type>, LambdaExpression> _converters = [];
-
-    /// <summary>
-    /// Caches default mappings such that they do not have to be created multiple times when calling GetMap(useDefaultMapIfTypeMapIsMissing: true).
-    /// </summary>
-    private static readonly Dictionary<Tuple<Type, Type>, LambdaExpression> _defaultMapCache = [];
-
-    /// <summary>
-    /// Caches compiled mapping expressions which map to existing objects
-    /// </summary>
-    private static readonly Dictionary<Tuple<Type, Type>, Delegate> _compiledMapToExistingCache = [];
-
-    /// <summary>
-    /// Caches compiled mapping expressions which create new target objects
-    /// </summary>
-    private static readonly Dictionary<Tuple<Type, Type>, Delegate> _compiledMapToNewCache = [];
-
-    /// <summary>
-    /// Caches compiled mapping expressions which map to existing objects
-    /// </summary>
-    private static readonly Dictionary<Expression, Delegate> _compiledSpecificMapToExistingCache = [];
-
-    /// <summary>
-    /// Caches compiled mapping expressions which create new target objects
-    /// </summary>
-    private static readonly Dictionary<Expression, Delegate> _compiledSpecificMapToNewCache = [];
-
-    /// <summary>
-    /// Tracks destination member names marked via Ignore&lt;T&gt;() for generated map expressions.
-    /// The key is the generated map lambda, and the value is the set of ignored member names.
-    /// </summary>
     private static readonly ConditionalWeakTable<LambdaExpression, HashSet<string>> _ignoredMembersByMap = new();
 
     private static readonly ConcurrentDictionary<Tuple<Type, Type, string>, bool> _initializedPropertyCache = new();
-
-    /// <summary>
-    /// Creates a new mapping with the optional partial mapping expression and adds it to the mapping dictionary
-    /// </summary>
-    /// <typeparam name="TSource"></typeparam>
-    /// <typeparam name="TTarget"></typeparam>
-    /// <param name="partial">A lambda expression where the body is a initializer (x => new TTarget { ... })</param>
-    /// <returns>The created mapping expression.</returns>
-    public static Expression<Func<TSource, TTarget>> CreateAndAddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null) {
-        var map = CreateMap(partial);
-        AddMap(map);
-        return map;
-    }
-
-    /// <summary>
-    /// Creates and adds a new mapping expression
-    /// </summary>
-    /// <typeparam name="TSource"></typeparam>
-    /// <typeparam name="TTarget"></typeparam>
-    /// <param name="mappingExpression">A full mapping expression (e.g. created with Mapper.CreateMap),where the body is a initializer (x => new TTarget { ... }).</param>
-    /// <exception cref="ArgumentException"></exception>
-    public static void AddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>> mappingExpression) {
-        var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
-        if (_converters.ContainsKey(key)) {
-            throw new ArgumentException($"There already exists a mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}). There can only be one mapping for each combination of TSource and TTarget.");
-        }
-        _converters[key] = mappingExpression;
-        if (!ContainsParameterMarkers(mappingExpression)) {
-            _compiledMapToNewCache[key] = mappingExpression.Compile();
-        }
-
-        // Map-to-existing is only valid for member initializer expressions
-        // (x => new TTarget { ... }). Value mappings (e.g. enum->enum, object->string)
-        // are supported for Map(source) but not for Map(source, target).
-        if (mappingExpression.Body is MemberInitExpression && !ContainsParameterMarkers(mappingExpression)) {
-            _compiledMapToExistingCache[key] = CompileMapper(mappingExpression);
-        }
-    }
-
-    /// <summary>
-    /// Gets the registered map expression for the source and target types.
-    /// Returns <c>null</c> when no map exists and default-map fallback is disabled.
-    /// </summary>
-    /// <typeparam name="TSource">The source type.</typeparam>
-    /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <returns>The mapping expression, or <c>null</c> if not found and fallback is disabled.</returns>
-    public static Expression<Func<TSource, TTarget>>? GetMap<TSource, TTarget>() {
-        var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
-        if (_converters.TryGetValue(key, out var existingConverter)) {
-            return (Expression<Func<TSource, TTarget>>)existingConverter;
-        } else if (_globalUseDefaultMapIfTypeMapIsMissing) {
-            if (_defaultMapCache.TryGetValue(key, out var map)) {
-                return (Expression<Func<TSource, TTarget>>)map;
-            }
-            var defaultMap = CreateMap<TSource, TTarget>();
-            _defaultMapCache[key] = defaultMap;
-            return (Expression<Func<TSource, TTarget>>)defaultMap;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Gets the registered map expression for the source and target types, throwing if none is available.
-    /// </summary>
-    /// <typeparam name="TSource">The source type.</typeparam>
-    /// <typeparam name="TTarget">The target type.</typeparam>
-    /// <returns>The required mapping expression.</returns>
-    /// <exception cref="ArgumentException">Thrown when no map is available.</exception>
-    public static Expression<Func<TSource, TTarget>> GetRequiredMap<TSource, TTarget>() {
-        var map = GetMap<TSource, TTarget>();
-        if (map != null) {
-            return map;
-        }
-
-        throw new ArgumentException($"Missing type map configuration for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
-    }
 
     private static bool IsParameterMarker(MethodInfo method) {
         if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProfile)) {
@@ -168,139 +31,7 @@ public static class Mapper {
             && genericDefinition.GetParameters()[0].ParameterType == typeof(string);
     }
 
-    /// <summary>
-    /// Maps the the source object of type TSource to an existing object of type TTarget.
-    /// The mapping expression must contain an initializer (x => new TTarget { ... }).
-    /// </summary>
-    /// <typeparam name="TSource">The type to map from</typeparam>
-    /// <typeparam name="TTarget">The target type to map to</typeparam>
-    /// <param name="expression">An initializer expression of the form (x => new TTarget { ... })</param>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="NotSupportedException"></exception>
-    public static void Map<TSource, TTarget>(this Expression<Func<TSource, TTarget>> expression, TSource source, TTarget target, bool cache = false) {
-        if (_compiledSpecificMapToExistingCache.TryGetValue(expression, out var map)) {
-            ((Action<TSource, TTarget>)map).Invoke(source, target);
-            return;
-        }
-        var compiled = CompileMapper(expression);
-        if (cache) {
-            _compiledSpecificMapToExistingCache[expression] = compiled;
-        }
-        compiled.Invoke(source, target);
-    }
-
-    /// <summary>
-    /// Maps the the source object of type TSource to an existing object of type TTarget.
-    /// </summary>
-    /// <typeparam name="TSource">The type to map from</typeparam>
-    /// <typeparam name="TTarget">The target type to map to</typeparam>
-    /// <returns>A new object of type <see cref="TTarget"/> with the mapped values</returns>
-    public static void Map<TSource, TTarget>(TSource source, TTarget target) {
-        var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
-        if (_compiledMapToExistingCache.TryGetValue(key, out var map)) {
-            ((Action<TSource, TTarget>)map).Invoke(source, target);
-            return;
-        }
-
-        var expression = GetRequiredRuntimeMap<TSource, TTarget>();
-
-        if (expression.Body is not MemberInitExpression) {
-            throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
-        }
-
-        var compiled = CompileMapper(expression);
-        _compiledMapToExistingCache[key] = compiled;
-        compiled.Invoke(source, target);
-    }
-
-    /// <summary>
-    /// Maps the the source object of type TSource to a new object of type TTarget.
-    /// The mapping expression must contain an initializer (x => new TTarget { ... }).
-    /// </summary>
-    /// <typeparam name="TSource">The type to map from</typeparam>
-    /// <typeparam name="TTarget">The target type to map to</typeparam>
-    /// <param name="expression">An initializer expression of the form (x => new TTarget { ... })</param>
-    /// <returns>A new object of type <see cref="TTarget"/> with the mapped values</returns>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="NotSupportedException"></exception>
-    public static TTarget Map<TSource, TTarget>(this Expression<Func<TSource, TTarget>> expression, TSource source, bool cache = false) {
-        if (_compiledSpecificMapToNewCache.TryGetValue(expression, out var map)) {
-            return ((Func<TSource, TTarget>)map).Invoke(source);
-        }
-        var compiled = expression.Compile();
-        if (cache) {
-            _compiledSpecificMapToNewCache[expression] = compiled;
-        }
-        return compiled.Invoke(source);
-    }
-
-    /// <summary>
-    /// Maps the the source object of type TSource to a new object of type TTarget.
-    /// </summary>
-    /// <typeparam name="TSource">The type to map from</typeparam>
-    /// <typeparam name="TTarget">The target type to map to</typeparam>
-    /// <param name="source"></param>
-    /// <returns>A new object of type <see cref="TTarget"/> with the mapped values</returns>
-    public static TTarget Map<TSource, TTarget>(TSource source) {
-        var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
-        if (_compiledMapToNewCache.TryGetValue(key, out var map)) {
-            return ((Func<TSource, TTarget>)map).Invoke(source);
-        }
-
-        var expression = GetRequiredRuntimeMap<TSource, TTarget>();
-        var compiled = expression.Compile();
-        _compiledMapToNewCache[key] = compiled;
-        return compiled.Invoke(source);
-    }
-
-    private static Expression<Func<TSource, TTarget>> GetRequiredRuntimeMap<TSource, TTarget>() {
-        if (TryCreateRuntimeMapExpression<TSource, TTarget>(TryGetRegisteredMap, null, out var runtimeExpression)) {
-            return runtimeExpression;
-        }
-
-        if (_globalUseDefaultMapIfTypeMapIsMissing) {
-            var key = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
-            if (_defaultMapCache.TryGetValue(key, out var map)) {
-                return (Expression<Func<TSource, TTarget>>)map;
-            }
-
-            var defaultMap = CreateMap<TSource, TTarget>();
-            _defaultMapCache[key] = defaultMap;
-            return defaultMap;
-        }
-
-        throw new ArgumentException($"Missing type map configuration for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
-    }
-
-    internal static LambdaExpression GetRequiredRuntimeMapUntyped(Type sourceType, Type targetType) {
-        var genericMethod = typeof(Mapper)
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Single(m => m.Name == nameof(GetRequiredRuntimeMap)
-                && m.IsGenericMethodDefinition
-                && m.GetGenericArguments().Length == 2
-                && m.GetParameters().Length == 0)
-            .MakeGenericMethod(sourceType, targetType);
-
-        try {
-            return (LambdaExpression)genericMethod.Invoke(null, null)!;
-        } catch (TargetInvocationException ex) when (ex.InnerException != null) {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-            throw;
-        }
-    }
-    
-    /// <summary>
-    /// Compiles a given mapping expression to an action which maps the values to an existing object instead.
-    /// The mapping expression must contain an initializer (x => new TTarget { ... }).
-    /// The initializer bindings are converted to assignment expressions.
-    /// </summary>
-    /// <typeparam name="TSource"></typeparam>
-    /// <typeparam name="TTarget"></typeparam>
-    /// <param name="expression"></param>
-    /// <returns>An action that can be called to map an object of type <see cref="TSource"/> to an existing object of type <see cref="TTarget"/></returns>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="NotSupportedException"></exception>
-    public static Action<TSource, TTarget> CompileMapper<TSource, TTarget>(Expression<Func<TSource, TTarget>> expression) {
+    private static Action<TSource, TTarget> CompileMapper<TSource, TTarget>(Expression<Func<TSource, TTarget>> expression) {
         _ignoredMembersByMap.TryGetValue(expression, out HashSet<string>? ignoredMembers);
 
         if (expression.Body is not MemberInitExpression initExpr)
@@ -318,8 +49,6 @@ public static class Mapper {
                 continue;
             }
 
-            // ma.Member -> property on Target
-            // ma.Expression -> expression using source (x.Firstname.ToLower())
             var replaced = new ParameterReplaceVisitor(expression.Parameters[0], sourceParam).Visit(ma.Expression);
             var assign = Expression.Assign(
                 Expression.PropertyOrField(targetParam, ma.Member.Name),
@@ -335,26 +64,12 @@ public static class Mapper {
         return action;
     }
 
-    /// <summary>
-    /// Creates a mapping expression for the source and destination types.
-    /// </summary>
-    /// <typeparam name="TSource">The source type.</typeparam>
-    /// <typeparam name="TDestination">The destination type.</typeparam>
-    /// <param name="partial">Optional partial initializer that overrides selected destination bindings.</param>
-    /// <returns>A full mapping expression that can be compiled or registered.</returns>
-    public static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
-        Expression<Func<TSource, TDestination>>? partial = null
-    ) {
-        return CreateMap(partial, TryGetRegisteredMap);
-    }
-
-    internal static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
+    private static Expression<Func<TSource, TDestination>> CreateMap<TSource, TDestination>(
         Expression<Func<TSource, TDestination>>? partial,
         Func<Type, Type, string?, LambdaExpression?>? existingMapResolver
     ) {
         var baseParam = Expression.Parameter(typeof(TSource), "x");
 
-        // get all public instance properties of the source type that can be read from
         var sourceProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead)
             .ToDictionary(p => p.Name);
@@ -362,11 +77,9 @@ public static class Mapper {
         var existingBindings = new Dictionary<string, MemberBinding>();
         var ignoredBindings = new HashSet<string>(StringComparer.Ordinal);
         if (partial != null) {
-            // update the parameter name of the partial expression to "x"
             var partialUpdated = (MemberInitExpression)new ParameterReplaceVisitor(partial.Parameters[0], baseParam)
                 .Visit(partial.Body);
 
-            // copy existing bindings from the partial expression
             foreach (var partialBinding in partialUpdated.Bindings.OfType<MemberAssignment>()) {
                 var binding = MapPartialBinding(partialBinding, typeof(TDestination), existingMapResolver, out var isIgnored);
                 if (isIgnored) {
@@ -379,24 +92,19 @@ public static class Mapper {
             }
         }
 
-        // get all public instance properties of the destination type that can be written to
         var destinationProperties = typeof(TDestination).GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanWrite);
 
         var allBindings = new List<MemberBinding>(existingBindings.Values);
 
         foreach (var destProp in destinationProperties) {
-            // skip properties that are already bound in the partial expression
             if (existingBindings.ContainsKey(destProp.Name) || ignoredBindings.Contains(destProp.Name))
                 continue;
 
             var sourceProp = GetSourceProperty(sourceProperties, destProp);
 
-            // If there is a source property with the same name, prefer an existing map for sourceType -> targetType.
-            // If no map exists, fallback to default implicit assignment when types are compatible.
             if (sourceProp != null) {
                 if (TryGetBindingFromExistingMap(baseParam, sourceProp, destProp, existingMapResolver, out var mappedBinding)) {
-                    // If a map for sourceProp.Type -> destProp.Type exists, prefer it over direct assignment
                     allBindings.Add(mappedBinding);
                 } else if (TryGetImplicitBinding(baseParam, sourceProp, destProp, out var implicitBinding)) {
                     allBindings.Add(implicitBinding);
@@ -417,12 +125,6 @@ public static class Mapper {
         return result;
     }
 
-    /// <summary>
-    /// Maps a member assignment to one that is compatible with EF.
-    /// Casts nullable types where necessary and replaces coalesce operators with ternary operators.
-    /// </summary>
-    /// <param name="partialBinding"></param>
-    /// <returns></returns>
     private static MemberAssignment? MapPartialBinding(
         MemberAssignment partialBinding,
         Type destinationType,
@@ -446,21 +148,16 @@ public static class Mapper {
             expr = new UseMapMarkerReplaceVisitor(existingMapResolver).Visit(expr)!;
         }
 
-        // replace the coalesce operator with a conditional expression
-        if (expr is BinaryExpression binaryExpr &&
-            binaryExpr.NodeType == ExpressionType.Coalesce) {
-            // x ?? y => x != null ? x : y
+        if (expr is BinaryExpression binaryExpr && binaryExpr.NodeType == ExpressionType.Coalesce) {
             var test = Expression.NotEqual(binaryExpr.Left, Expression.Constant(null, binaryExpr.Left.Type));
-            // if the left side is a nullable type and the right side is not equal to the null constant, use the .Value property
-            // to get the underlying value, otherwise use the left side directly, since null is a valid fallback for a nullable type
             var value = Nullable.GetUnderlyingType(binaryExpr.Left.Type) != null
                  && (binaryExpr.Right is not ConstantExpression rightConst || rightConst.Value != null)
                 ? Expression.Property(binaryExpr.Left, "Value")
                 : binaryExpr.Left;
             expr = Expression.Condition(test, value, binaryExpr.Right);
         }
-        var binding = Expression.Bind(partialBinding.Member, expr);
-        return binding;
+
+        return Expression.Bind(partialBinding.Member, expr);
     }
 
     private static bool TryResolveIgnoreMarker(
@@ -652,11 +349,7 @@ public static class Mapper {
                 nullFallback = Expression.Convert(nullFallback, adaptedResult.Type);
             }
 
-            adaptedResult = Expression.Condition(
-                sourceNullCheck,
-                adaptedResult,
-                nullFallback
-            );
+            adaptedResult = Expression.Condition(sourceNullCheck, adaptedResult, nullFallback);
         }
 
         mappedBinding = Expression.Bind(destProp, adaptedResult);
@@ -813,18 +506,7 @@ public static class Mapper {
         return true;
     }
 
-    /// <summary>
-    /// The target is compatible if:
-    /// * the source property exists and
-    /// * the target property type is assignable from the source property type, or
-    /// * the source property is nullable and the underlying type is assignable to the target type.
-    /// This allows for nullable to non-nullable assignments with a default value fallback.
-    /// </summary>
-    /// <param name="sourceProp">The property to map from</param>
-    /// <param name="destProp">The property to map to</param>
-    /// <returns></returns>
     private static PropertyInfo? GetSourceProperty(Dictionary<string, PropertyInfo> sourceTypeProperties, PropertyInfo destProp) {
-        // Try to find a matching property with the same name
         if (!sourceTypeProperties.TryGetValue(destProp.Name, out var sourceProp)) {
             return null;
         }
@@ -854,41 +536,24 @@ public static class Mapper {
         return true;
     }
 
-    /// <summary>
-    /// Create binding expression from source and dest property info.
-    /// PropertyName = (T?)x.PropertyName if the dest is nullable and the source is not.
-    /// PropertyName = x.PropertyName != null ? x.PropertyName.Value : default(T) if the source is nullable and the destination is not.
-    /// PropertyName = x.PropertyName otherwise.
-    /// </summary>
-    /// <param name="baseParam">Parameter expression to be used for the final initializer</param>
-    /// <param name="sourceProp">The property info of the source type property</param>
-    /// <param name="destProp">The matching destination porperty info of the target type property</param>
-    /// <returns></returns>
     private static MemberAssignment GetImplicitBinding(ParameterExpression baseParam, PropertyInfo sourceProp, PropertyInfo destProp) {
         MemberAssignment binding;
         var sourceAccess = Expression.Property(baseParam, sourceProp);
 
-        // check if the destination property is nullable
         var sourceNullableType = Nullable.GetUnderlyingType(sourceProp.PropertyType);
         var destNullableType = Nullable.GetUnderlyingType(destProp.PropertyType);
 
         if (destNullableType != null && sourceProp.PropertyType == destNullableType) {
-            // if dest is nullable and source is not, cast it for type compatibility:
-            // destProp = (T?)source.Prop
             var nullableType = typeof(Nullable<>).MakeGenericType(destNullableType);
             var converted = Expression.Convert(sourceAccess, nullableType);
             binding = Expression.Bind(destProp, converted);
         } else if (destNullableType == null && sourceNullableType != null && destProp.PropertyType == sourceNullableType) {
-            // if source is nullable and dest is not, use the default value as fallback:
-            // destProp = sourceProp != null ? sourceProp.Value : default(destProp.PropertyType)
             var notNull = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
             var value = Expression.Property(sourceAccess, "Value");
             var defaultValue = Expression.Default(destProp.PropertyType);
             var conditional = Expression.Condition(notNull, value, defaultValue);
             binding = Expression.Bind(destProp, conditional);
         } else {
-            // Both types are either nullable or non-nullable and target is assignable from source:
-            // destProp = source.Prop
             binding = Expression.Bind(destProp, sourceAccess);
         }
 
@@ -914,18 +579,13 @@ public static class Mapper {
             return false;
         }
 
-        // If source is nullable (or reference) and null, map to default(target).
         if (sourceNullCheck != null) {
             var nullFallback = CreatePropertyDefaultValueExpression(destProp);
             if (nullFallback.Type != adaptedResult.Type && adaptedResult.Type.IsAssignableFrom(nullFallback.Type)) {
                 nullFallback = Expression.Convert(nullFallback, adaptedResult.Type);
             }
 
-            adaptedResult = Expression.Condition(
-                sourceNullCheck,
-                adaptedResult,
-                nullFallback
-            );
+            adaptedResult = Expression.Condition(sourceNullCheck, adaptedResult, nullFallback);
         }
 
         binding = Expression.Bind(destProp, adaptedResult);
@@ -1175,7 +835,7 @@ public static class Mapper {
         return true;
     }
 
-    internal static bool TryCreateRuntimeMapExpression<TSource, TTarget>(
+    private static bool TryCreateRuntimeMapExpression<TSource, TTarget>(
         Func<Type, Type, string?, LambdaExpression?> resolver,
         string? preferredMapName,
         out Expression<Func<TSource, TTarget>> expression
@@ -1183,7 +843,7 @@ public static class Mapper {
         expression = null!;
 
         var sourceParam = Expression.Parameter(typeof(TSource), "x");
-        if (!TryBuildMappedExpression(sourceParam, typeof(TSource), typeof(TTarget), resolver, preferredMapName, out var mappedBody, out var sourceNullCheck)) {
+        if (!TryBuildMappedExpression(sourceParam, typeof(TSource), typeof(TTarget), resolver, preferredMapName, out var mappedBody, out _)) {
             return false;
         }
 
@@ -1200,7 +860,6 @@ public static class Mapper {
         var sourceCoreType = Nullable.GetUnderlyingType(sourceType) ?? sourceType;
         var destinationCoreType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
 
-        // Prefer exact first, then lifted variants.
         var resolved = resolver(sourceType, destinationType, preferredMapName)
             ?? resolver(sourceType, destinationCoreType, preferredMapName)
             ?? resolver(sourceCoreType, destinationType, preferredMapName)
@@ -1226,13 +885,8 @@ public static class Mapper {
             return null;
         }
 
-        var sourceCandidates = sourceIsCollection
-            ? GetCollectionResolutionCandidates(sourceType)
-            : [sourceType];
-
-        var destinationCandidates = destinationIsCollection
-            ? GetCollectionResolutionCandidates(destinationType)
-            : [destinationType];
+        var sourceCandidates = sourceIsCollection ? GetCollectionResolutionCandidates(sourceType) : [sourceType];
+        var destinationCandidates = destinationIsCollection ? GetCollectionResolutionCandidates(destinationType) : [destinationType];
 
         foreach (var sourceCandidate in sourceCandidates) {
             foreach (var destinationCandidate in destinationCandidates) {
@@ -1268,14 +922,12 @@ public static class Mapper {
             }
         }
 
-        var distinct = candidates
+        return candidates
             .Distinct()
             .OrderBy(x => x == type ? 0 : 1)
             .ThenBy(GetCollectionCandidateRank)
             .ThenBy(x => x.FullName, StringComparer.Ordinal)
             .ToList();
-
-        return distinct;
     }
 
     private static int GetCollectionCandidateRank(Type type) {
@@ -1317,7 +969,6 @@ public static class Mapper {
         sourceHasValueCheck = null;
 
         if (sourceAccess.Type == mapSourceType) {
-            // For reference/nullable values, keep null fallback behavior.
             if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
                 sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
@@ -1327,14 +978,12 @@ public static class Mapper {
         var sourceNullableUnderlying = Nullable.GetUnderlyingType(sourceAccess.Type);
         var mapNullableUnderlying = Nullable.GetUnderlyingType(mapSourceType);
 
-        // T? -> T
         if (sourceNullableUnderlying != null && sourceNullableUnderlying == mapSourceType) {
             sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
             adaptedSource = Expression.Property(sourceAccess, "Value");
             return true;
         }
 
-        // T -> T?
         if (mapNullableUnderlying != null && sourceAccess.Type == mapNullableUnderlying) {
             adaptedSource = Expression.Convert(sourceAccess, mapSourceType);
             return true;
@@ -1361,13 +1010,11 @@ public static class Mapper {
         var targetNullableUnderlying = Nullable.GetUnderlyingType(targetType);
         var mappedNullableUnderlying = Nullable.GetUnderlyingType(mappedBody.Type);
 
-        // T -> T?
         if (targetNullableUnderlying != null && mappedBody.Type == targetNullableUnderlying) {
             adaptedResult = Expression.Convert(mappedBody, targetType);
             return true;
         }
 
-        // T? -> T (keep default fallback)
         if (mappedNullableUnderlying != null && targetType == mappedNullableUnderlying) {
             var hasValue = Expression.NotEqual(mappedBody, Expression.Constant(null, mappedBody.Type));
             var value = Expression.Property(mappedBody, "Value");
@@ -1605,30 +1252,21 @@ public static class Mapper {
             ? Expression.Constant(null, type)
             : Expression.Default(type);
 
-    private static LambdaExpression? TryGetRegisteredMap(Type sourceType, Type destinationType, string? name) {
-        if (!string.IsNullOrWhiteSpace(name)) {
-            return null;
-        }
-
-        var key = new Tuple<Type, Type>(sourceType, destinationType);
-        return _converters.TryGetValue(key, out var existingConverter) ? existingConverter : null;
-    }
-
-    internal static Expression<Func<TSource, TTarget>> ApplyParameters<TSource, TTarget>(
+    private static Expression<Func<TSource, TTarget>> ApplyParameters<TSource, TTarget>(
         Expression<Func<TSource, TTarget>> mappingExpression,
         IReadOnlyDictionary<string, object?>? parameters
     ) {
         return (Expression<Func<TSource, TTarget>>)ApplyParameters((LambdaExpression)mappingExpression, parameters);
     }
 
-    internal static LambdaExpression ApplyParameters(LambdaExpression mappingExpression, IReadOnlyDictionary<string, object?>? parameters) {
+    private static LambdaExpression ApplyParameters(LambdaExpression mappingExpression, IReadOnlyDictionary<string, object?>? parameters) {
         var replacedBody = new ParameterMarkerReplaceVisitor(parameters).Visit(mappingExpression.Body)!;
         return replacedBody == mappingExpression.Body
             ? mappingExpression
             : Expression.Lambda(replacedBody, mappingExpression.Parameters);
     }
 
-    internal static bool ContainsParameterMarkers(LambdaExpression expression)
+    private static bool ContainsParameterMarkers(LambdaExpression expression)
         => new ParameterMarkerDetector().ContainsMarker(expression);
 
     private sealed class ParameterMarkerDetector : ExpressionVisitor {

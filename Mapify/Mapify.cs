@@ -7,7 +7,7 @@ namespace Mapify.NET;
 /// <summary>
 /// Instance-based mapper that builds and caches mapping expressions from configured profiles.
 /// </summary>
-public class Mapify : IMapify, IMapifyConfigurator {
+public partial class Mapify : IMapify, IMapifyConfigurator {
     private bool _useDefaultMapIfTypeMapIsMissing;
 
     private const int _defaultRecursiveUseMapDepth = 6;
@@ -226,7 +226,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     }
 
     private Expression<Func<TSource, TTarget>> CreateMapFromPendingGeneric<TSource, TTarget>(string? mapName, LambdaExpression? partial)
-        => Mapper.CreateMap((Expression<Func<TSource, TTarget>>?)partial, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName ?? mapName));
+        => CreateMap((Expression<Func<TSource, TTarget>>?)partial, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName ?? mapName));
 
     private LambdaExpression? ResolveExistingMapForBuild(Type sourceType, Type targetType, string? mapName) {
         if (!string.IsNullOrWhiteSpace(mapName)) {
@@ -300,12 +300,12 @@ public class Mapify : IMapify, IMapifyConfigurator {
             return;
         }
 
-        if (!Mapper.ContainsParameterMarkers(expression)) {
+        if (!ContainsParameterMarkers(expression)) {
             _compiledMapToNewCache[key] = expression.Compile();
         }
 
-        if (expression.Body is MemberInitExpression && !Mapper.ContainsParameterMarkers(expression)) {
-            _compiledMapToExistingCache[key] = Mapper.CompileMapper(expression);
+        if (expression.Body is MemberInitExpression && !ContainsParameterMarkers(expression)) {
+            _compiledMapToExistingCache[key] = CompileMapper(expression);
         }
     }
 
@@ -317,12 +317,12 @@ public class Mapify : IMapify, IMapifyConfigurator {
         }
 
         _converters[key] = mappingExpression;
-        if (!Mapper.ContainsParameterMarkers(mappingExpression)) {
+        if (!ContainsParameterMarkers(mappingExpression)) {
             _compiledMapToNewCache[key] = mappingExpression.Compile();
         }
 
-        if (mappingExpression.Body is MemberInitExpression && !Mapper.ContainsParameterMarkers(mappingExpression)) {
-            _compiledMapToExistingCache[key] = Mapper.CompileMapper(mappingExpression);
+        if (mappingExpression.Body is MemberInitExpression && !ContainsParameterMarkers(mappingExpression)) {
+            _compiledMapToExistingCache[key] = CompileMapper(mappingExpression);
         }
     }
 
@@ -358,7 +358,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
         if (_converters.TryGetValue(key, out var existingConverter)) {
-            return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
+            return ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
         }
 
         return null;
@@ -418,18 +418,18 @@ public class Mapify : IMapify, IMapifyConfigurator {
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_converters.TryGetValue(key, out var existingConverter)) {
-            return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
+            return ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
         }
 
         if (_useDefaultMapIfTypeMapIsMissing) {
             var defaultCacheKey = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (_defaultMapCache.TryGetValue(defaultCacheKey, out var existingDefaultMap)) {
-                return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
+                return ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
             }
 
-            var defaultMap = Mapper.CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
+            var defaultMap = CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
             _defaultMapCache[defaultCacheKey] = defaultMap;
-            return Mapper.ApplyParameters(defaultMap, parameters);
+            return ApplyParameters(defaultMap, parameters);
         }
 
         return null;
@@ -490,7 +490,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, name) instead.");
         }
 
-        var compiled = Mapper.CompileMapper(expression);
+        var compiled = CompileMapper(expression);
         _compiledMapToExistingCache[key] = compiled;
         compiled.Invoke(source, target);
     }
@@ -519,7 +519,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, name, parameters) instead.");
         }
 
-        var compiled = Mapper.CompileMapper(expression);
+        var compiled = CompileMapper(expression);
         compiled.Invoke(source, target);
     }
 
@@ -545,7 +545,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source) instead.");
         }
 
-        var compiled = Mapper.CompileMapper(expression);
+        var compiled = CompileMapper(expression);
         _compiledMapToExistingCache[key] = compiled;
         compiled.Invoke(source, target);
     }
@@ -569,7 +569,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
             throw new NotSupportedException($"Mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}) cannot map to an existing target instance because the map does not use an object initializer (x => new TTarget {{ ... }}). Use Map(source, parameters) instead.");
         }
 
-        var compiled = Mapper.CompileMapper(expression);
+        var compiled = CompileMapper(expression);
         compiled.Invoke(source, target);
     }
 
@@ -661,7 +661,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
         string? name,
         IReadOnlyDictionary<string, object?> parameters
     ) {
-        if (Mapper.TryCreateRuntimeMapExpression<TSource, TTarget>(
+        if (TryCreateRuntimeMapExpression<TSource, TTarget>(
                 (sourceType, targetType, requestedMapName) => ResolveRuntimeMapCandidate(sourceType, targetType, requestedMapName ?? name, parameters),
                 name,
                 out var runtimeMapExpression)) {
@@ -671,12 +671,12 @@ public class Mapify : IMapify, IMapifyConfigurator {
         if (name == null && _useDefaultMapIfTypeMapIsMissing) {
             var defaultCacheKey = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
             if (_defaultMapCache.TryGetValue(defaultCacheKey, out var existingDefaultMap)) {
-                return Mapper.ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
+                return ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
             }
 
-            var defaultMap = Mapper.CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
+            var defaultMap = CreateMap<TSource, TTarget>(null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
             _defaultMapCache[defaultCacheKey] = defaultMap;
-            return Mapper.ApplyParameters(defaultMap, parameters);
+            return ApplyParameters(defaultMap, parameters);
         }
 
         if (name == null) {
@@ -717,7 +717,7 @@ public class Mapify : IMapify, IMapifyConfigurator {
     ) {
         var key = new MapKey(sourceType, targetType, name);
         if (_converters.TryGetValue(key, out var existingConverter)) {
-            return Mapper.ApplyParameters(existingConverter, parameters);
+            return ApplyParameters(existingConverter, parameters);
         }
 
         return null;
