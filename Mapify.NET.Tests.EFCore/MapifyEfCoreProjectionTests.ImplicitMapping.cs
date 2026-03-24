@@ -37,14 +37,13 @@ public partial class MapifyEfCoreProjectionTests {
 
         db.SaveChanges();
 
-        var addressMap = Mapper.CreateMap<EfCoreAddress, EfCoreAddressDto>();
-        var phoneMap = Mapper.CreateMap<EfCorePhone, EfCorePhoneDto>();
+        var mapify = new Mapify([
+            new EfCoreAddressProfile(),
+            new EfCorePhoneProfile(),
+            new EfCorePersonInvokeProfile()
+        ]);
 
-        var map = Mapper.CreateMap<EfCorePerson, EfCorePersonDto>(x => new EfCorePersonDto {
-            FullName = x.FirstName + " " + x.LastName,
-            HomeAddress = addressMap.Invoke(x.HomeAddress),
-            Phones = x.Phones.Select(p => phoneMap.Invoke(p)).ToList()
-        });
+        var map = mapify.GetRequiredMap<EfCorePerson, EfCorePersonDto>();
 
         var result = db.People
             .AsExpandable()
@@ -91,7 +90,8 @@ public partial class MapifyEfCoreProjectionTests {
 
         db.SaveChanges();
 
-        var map = Mapper.CreateMap<EfCorePrimitiveCollectionsSource, EfCorePrimitiveCollectionsDto>();
+        var mapify = new Mapify([new EfCorePrimitiveCollectionsProfile()]);
+        var map = mapify.GetRequiredMap<EfCorePrimitiveCollectionsSource, EfCorePrimitiveCollectionsDto>();
 
         var result = db.People
             .OrderBy(x => x.Id)
@@ -159,5 +159,19 @@ public partial class MapifyEfCoreProjectionTests {
         Assert.Equal("Alan Turing", result[1].FullName);
         Assert.Equal("Manchester", result[1].HomeAddress.City);
         Assert.Equal(new[] { "+44-200" }, result[1].Phones.Select(x => x.Number).ToArray());
+    }
+
+    private sealed class EfCorePersonInvokeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCorePersonDto>(x => new EfCorePersonDto {
+                FullName = x.FirstName + " " + x.LastName,
+                HomeAddress = UseMap<EfCoreAddress, EfCoreAddressDto>(x.HomeAddress),
+                Phones = UseMap<IEnumerable<EfCorePhone>, IEnumerable<EfCorePhoneDto>>(x.Phones).ToList()
+            });
+        }
+    }
+
+    private sealed class EfCorePrimitiveCollectionsProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<EfCorePrimitiveCollectionsSource, EfCorePrimitiveCollectionsDto>();
     }
 }

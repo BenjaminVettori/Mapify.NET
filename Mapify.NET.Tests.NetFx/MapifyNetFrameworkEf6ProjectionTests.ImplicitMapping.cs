@@ -33,14 +33,13 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
 
         db.SaveChanges();
 
-        var addressMap = Mapper.CreateMap<Ef6Address, Ef6AddressDto>();
-        var phoneMap = Mapper.CreateMap<Ef6Phone, Ef6PhoneDto>();
+        var mapify = new Mapify([
+            new Ef6AddressProfile(),
+            new Ef6PhoneProfile(),
+            new Ef6PersonInvokeProfile()
+        ]);
 
-        var map = Mapper.CreateMap<Ef6Person, Ef6PersonDto>(x => new Ef6PersonDto {
-            FullName = x.FirstName + " " + x.LastName,
-            HomeAddress = addressMap.Invoke(x.HomeAddress),
-            Phones = x.Phones.Select(p => phoneMap.Invoke(p)).ToList()
-        });
+        var map = mapify.GetRequiredMap<Ef6Person, Ef6PersonDto>();
 
         var result = db.People
             .AsExpandable()
@@ -84,7 +83,8 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
 
         db.SaveChanges();
 
-        var map = Mapper.CreateMap<Ef6PrimitiveCollectionsSource, Ef6PrimitiveCollectionsDto>();
+        var mapify = new Mapify([new Ef6PrimitiveCollectionsProfile()]);
+        var map = mapify.GetRequiredMap<Ef6PrimitiveCollectionsSource, Ef6PrimitiveCollectionsDto>();
 
         var result = db.People
             .OrderBy(x => x.Id)
@@ -129,7 +129,8 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
 
         db.SaveChanges();
 
-        var map = Mapper.CreateMap<Ef6PrimitiveArrayCollectionsSource, Ef6PrimitiveArrayCollectionsDto>();
+        var mapify = new Mapify([new Ef6PrimitiveArrayCollectionsProfile()]);
+        var map = mapify.GetRequiredMap<Ef6PrimitiveArrayCollectionsSource, Ef6PrimitiveArrayCollectionsDto>();
 
         // EF6 cannot translate source-side ToArray() inside LINQ-to-Entities projections.
         Assert.Throws<NotSupportedException>(() => db.People
@@ -232,5 +233,23 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
             .OrderBy(x => x.Id)
             .Select(mapExpr)
             .ToList());
+    }
+
+    private sealed class Ef6PersonInvokeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Person, Ef6PersonDto>(x => new Ef6PersonDto {
+                FullName = x.FirstName + " " + x.LastName,
+                HomeAddress = UseMap<Ef6Address, Ef6AddressDto>(x.HomeAddress),
+                Phones = UseMap<IEnumerable<Ef6Phone>, IEnumerable<Ef6PhoneDto>>(x.Phones).ToList()
+            });
+        }
+    }
+
+    private sealed class Ef6PrimitiveCollectionsProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<Ef6PrimitiveCollectionsSource, Ef6PrimitiveCollectionsDto>();
+    }
+
+    private sealed class Ef6PrimitiveArrayCollectionsProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<Ef6PrimitiveArrayCollectionsSource, Ef6PrimitiveArrayCollectionsDto>();
     }
 }

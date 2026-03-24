@@ -1,16 +1,11 @@
 namespace Mapify.NET.Tests.NetFx;
 
 public class MapifyNetFrameworkEf6DefaultValueBehaviorTests {
-    public MapifyNetFrameworkEf6DefaultValueBehaviorTests() {
-        Mapper.UseDefaultMapIfTypeMapIsMissing(false);
-        Mapper.ClearMappings();
-    }
-
     [Fact]
     public void CreateMap_ShouldKeepNull_ForNullableCollection_WhenSourceIsNull() {
-        var map = Mapper.CreateMap<Ef6NullableCollectionSource, Ef6NullableCollectionTarget>();
+        var mapify = new Mapify([new Ef6NullableCollectionProfile()]);
 
-        var mapped = map.Map(new Ef6NullableCollectionSource {
+        var mapped = mapify.Map<Ef6NullableCollectionSource, Ef6NullableCollectionTarget>(new Ef6NullableCollectionSource {
             Numbers = null
         });
 
@@ -19,9 +14,9 @@ public class MapifyNetFrameworkEf6DefaultValueBehaviorTests {
 
     [Fact]
     public void CreateMap_ShouldUseEmpty_ForNonNullableCollection_WhenSourceIsNull() {
-        var map = Mapper.CreateMap<Ef6NullableCollectionSource, Ef6NonNullableCollectionTarget>();
+        var mapify = new Mapify([new Ef6NonNullableCollectionProfile()]);
 
-        var mapped = map.Map(new Ef6NullableCollectionSource {
+        var mapped = mapify.Map<Ef6NullableCollectionSource, Ef6NonNullableCollectionTarget>(new Ef6NullableCollectionSource {
             Numbers = null
         });
 
@@ -31,9 +26,9 @@ public class MapifyNetFrameworkEf6DefaultValueBehaviorTests {
 
     [Fact]
     public void CreateMap_ShouldPreserveInitializer_ForNonNullableCollection_WhenSourcePropertyIsMissing() {
-        var map = Mapper.CreateMap<Ef6SourceWithoutCollection, Ef6InitializedCollectionTarget>();
+        var mapify = new Mapify([new Ef6InitializedCollectionProfile()]);
 
-        var mapped = map.Map(new Ef6SourceWithoutCollection {
+        var mapped = mapify.Map<Ef6SourceWithoutCollection, Ef6InitializedCollectionTarget>(new Ef6SourceWithoutCollection {
             Id = 7
         });
 
@@ -43,9 +38,9 @@ public class MapifyNetFrameworkEf6DefaultValueBehaviorTests {
 
     [Fact]
     public void CreateMap_ShouldUseEmpty_ForUninitializedNonNullableCollection_WhenSourcePropertyIsMissing() {
-        var map = Mapper.CreateMap<Ef6SourceWithoutCollection, Ef6UninitializedCollectionTarget>();
+        var mapify = new Mapify([new Ef6UninitializedCollectionProfile()]);
 
-        var mapped = map.Map(new Ef6SourceWithoutCollection {
+        var mapped = mapify.Map<Ef6SourceWithoutCollection, Ef6UninitializedCollectionTarget>(new Ef6SourceWithoutCollection {
             Id = 7
         });
 
@@ -78,5 +73,21 @@ public class MapifyNetFrameworkEf6DefaultValueBehaviorTests {
     private class Ef6UninitializedCollectionTarget {
         public int Id { get; set; }
         public List<int> Numbers { get; set; } = null!;
+    }
+
+    private sealed class Ef6NullableCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<Ef6NullableCollectionSource, Ef6NullableCollectionTarget>();
+    }
+
+    private sealed class Ef6NonNullableCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<Ef6NullableCollectionSource, Ef6NonNullableCollectionTarget>();
+    }
+
+    private sealed class Ef6InitializedCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<Ef6SourceWithoutCollection, Ef6InitializedCollectionTarget>();
+    }
+
+    private sealed class Ef6UninitializedCollectionProfile : MapifyProfile {
+        protected override void Configure() => CreateMap<Ef6SourceWithoutCollection, Ef6UninitializedCollectionTarget>();
     }
 }

@@ -5,11 +5,6 @@ namespace Mapify.NET.Tests;
 
 [Collection("Mapper Tests")]
 public class MapifyProjectToExtensionsTests {
-    public MapifyProjectToExtensionsTests() {
-        Mapper.UseDefaultMapIfTypeMapIsMissing(false);
-        Mapper.ClearMappings();
-    }
-
     private static TException AssertThrowsUnwrapped<TException>(Action action)
         where TException : Exception {
         try {
@@ -21,34 +16,6 @@ public class MapifyProjectToExtensionsTests {
         return Assert.Throws<TException>(action);
     }
     
-    [Fact]
-    public void ProjectTo_IEnumerable_Static_ShouldProjectItems() {
-        Mapper.AddMap<ProjectSource, ProjectTarget>(x => new ProjectTarget { Value = x.Value + 1 });
-
-        IEnumerable source = new[] {
-            new ProjectSource { Value = 1 },
-            new ProjectSource { Value = 2 }
-        };
-
-        var projected = source.ProjectTo<ProjectTarget>().Select(x => x.Value).ToArray();
-
-        Assert.Equal([2, 3], projected);
-    }
-
-    [Fact]
-    public void ProjectTo_IEnumerable_Static_ShouldProjectFlatList_WhenOnlyElementMapIsRegistered() {
-        Mapper.AddMap<ProjectSource, ProjectTarget>(x => new ProjectTarget { Value = x.Value + 1 });
-
-        IEnumerable source = new List<ProjectSource> {
-            new ProjectSource { Value = 1 },
-            new ProjectSource { Value = 2 }
-        };
-
-        var projected = source.ProjectTo<ProjectTarget>().ToList();
-
-        Assert.Equal([2, 3], projected.Select(x => x.Value).ToArray());
-    }
-
     [Fact]
     public void ProjectTo_IEnumerable_Instance_ShouldProjectFlatList_WhenOnlyElementMapIsRegistered() {
         var mapify = new Mapify([new EnumerableProjectProfile()]);
@@ -228,7 +195,6 @@ public class MapifyProjectToExtensionsTests {
         IEnumerable? nullSource = null;
         var mapify = new Mapify([new EnumerableProjectProfile()]);
 
-        Assert.Throws<ArgumentNullException>(() => nullSource!.ProjectTo<ProjectTarget>());
         Assert.Throws<ArgumentNullException>(() => nullSource!.ProjectTo<ProjectTarget>(mapify));
         Assert.Throws<ArgumentNullException>(() => new[] { new ProjectSource { Value = 1 } }.ProjectTo<ProjectTarget>((IMapify)null!));
     }
@@ -243,13 +209,6 @@ public class MapifyProjectToExtensionsTests {
         Assert.Throws<ArgumentNullException>(() => source.ProjectTo<ProjectTarget>((IMapify)null!, "Named", new Dictionary<string, object?>()));
         Assert.Throws<ArgumentException>(() => source.ProjectTo<ProjectTarget>(mapify, " "));
         Assert.Throws<ArgumentException>(() => source.ProjectTo<ProjectTarget>(mapify, " ", new Dictionary<string, object?>()));
-    }
-
-    [Fact]
-    public void ProjectTo_IQueryable_StaticOverloads_ShouldThrowForNullSource() {
-        IQueryable? source = null;
-
-        Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>());
     }
 
     [Fact]
@@ -302,37 +261,34 @@ public class MapifyProjectToExtensionsTests {
 
     [Fact]
     public void ProjectTo_IEnumerable_ShouldResolveStringElementTypeAsChar() {
-        Mapper.AddMap<char, string>(c => c.ToString().ToUpperInvariant());
+        var mapify = new Mapify([new EnumerableCharToStringProfile()]);
         IEnumerable source = "ab";
 
-        var projected = source.ProjectTo<string>().ToArray();
+        var projected = source.ProjectTo<string>(mapify).ToArray();
 
         Assert.Equal(["A", "B"], projected);
     }
 
     [Fact]
     public void ProjectTo_IEnumerable_ShouldFallbackToObjectForNonGenericCollection() {
-        Mapper.AddMap<object, ProjectTarget>(x => new ProjectTarget {
-            Value = ((ProjectSource)x).Value + 1
-        });
-
+        var mapify = new Mapify([new EnumerableObjectToProjectTargetProfile()]);
         IEnumerable source = new ArrayList {
             new ProjectSource { Value = 7 }
         };
 
-        var projected = source.ProjectTo<ProjectTarget>().Single();
+        var projected = source.ProjectTo<ProjectTarget>(mapify).Single();
 
         Assert.Equal(8, projected.Value);
     }
 
     [Fact]
     public void ProjectTo_IEnumerable_ShouldResolveElementTypeFromGenericEnumerableInterface() {
-        Mapper.AddMap<ProjectSource, ProjectTarget>(x => new ProjectTarget { Value = x.Value + 1 });
+        var mapify = new Mapify([new EnumerableProjectProfile()]);
         IEnumerable source = new List<ProjectSource> {
             new ProjectSource { Value = 9 }
         };
 
-        var projected = source.ProjectTo<ProjectTarget>().Single();
+        var projected = source.ProjectTo<ProjectTarget>(mapify).Single();
 
         Assert.Equal(10, projected.Value);
     }
@@ -345,6 +301,20 @@ public class MapifyProjectToExtensionsTests {
         Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(mapify, new Dictionary<string, object?>()));
         Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(mapify, "NamedParam"));
         Assert.Throws<ArgumentNullException>(() => source!.ProjectTo<ProjectTarget>(mapify, "NamedParam", new Dictionary<string, object?>()));
+    }
+
+    private sealed class EnumerableCharToStringProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<char, string>(c => c.ToString().ToUpperInvariant());
+        }
+    }
+
+    private sealed class EnumerableObjectToProjectTargetProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<object, ProjectTarget>(x => new ProjectTarget {
+                Value = ((ProjectSource)x).Value + 1
+            });
+        }
     }
 
     [Fact]

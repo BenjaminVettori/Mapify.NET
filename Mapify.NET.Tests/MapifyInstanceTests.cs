@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 
 namespace Mapify.NET.Tests; 
 public class MapifyInstanceTests {
@@ -199,6 +200,44 @@ public class MapifyInstanceTests {
         public IEnumerable<ElementTarget> ItemsEnumerable { get; set; } = [];
         public ICollection<ElementTarget> ItemsCollection { get; set; } = [];
         public IList<ElementTarget> ItemsArrayAsList { get; set; } = [];
+    }
+
+    private class CollectionContainerSource {
+        public List<ElementSource> Items { get; set; } = [];
+    }
+
+    private class CollectionContainerTarget {
+        public List<ElementTarget> Items { get; set; } = [];
+    }
+
+    private class NullableCollectionContainerSource2 {
+        public List<ElementSource>? Items { get; set; }
+    }
+
+    private class NullableCollectionContainerTarget2 {
+        public List<ElementTarget>? Items { get; set; }
+    }
+
+    private class NullableNumberContainerSource {
+        public NumberSource? Number { get; set; }
+    }
+
+    private class NullableNumberContainerTarget {
+        public NumberTarget? Number { get; set; }
+    }
+
+    private class AmbiguousEnumerable : IEnumerable<int>, IEnumerable<string> {
+        IEnumerator<int> IEnumerable<int>.GetEnumerator() => Array.Empty<int>().AsEnumerable().GetEnumerator();
+        IEnumerator<string> IEnumerable<string>.GetEnumerator() => Array.Empty<string>().AsEnumerable().GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => ((IEnumerable<int>)this).GetEnumerator();
+    }
+
+    private class AmbiguousCollectionContainerSource {
+        public AmbiguousEnumerable Items { get; set; } = new AmbiguousEnumerable();
+    }
+
+    private class AmbiguousCollectionContainerTarget {
+        public List<int> Items { get; set; } = [];
     }
 
     private class ImplicitPrimitiveCollectionsSource {
@@ -638,6 +677,46 @@ public class MapifyInstanceTests {
     private class ElementProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<ElementSource, ElementTarget>(x => new ElementTarget { Value = x.Value + 1 });
+        }
+    }
+
+    private class EnumerableElementMapProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<IEnumerable<ElementSource>, IEnumerable<ElementTarget>>(
+                x => x.Select(i => new ElementTarget { Value = i.Value + 10 })
+            );
+        }
+    }
+
+    private class CollectionContainerProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<CollectionContainerSource, CollectionContainerTarget>();
+        }
+    }
+
+    private class NullableCollectionContainerProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NullableCollectionContainerSource2, NullableCollectionContainerTarget2>();
+        }
+    }
+
+    private class NullableNumberContainerProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NullableNumberContainerSource, NullableNumberContainerTarget>();
+        }
+    }
+
+    private class NumberNullableExactProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NumberSource?, NumberTarget?>(x => x == null
+                ? (NumberTarget?)null
+                : new NumberTarget { Value = x.Value.Value + 100 });
+        }
+    }
+
+    private class AmbiguousCollectionContainerProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<AmbiguousCollectionContainerSource, AmbiguousCollectionContainerTarget>();
         }
     }
 
@@ -1107,6 +1186,20 @@ public class MapifyInstanceTests {
     }
 
     [Fact]
+    public void Constructor_ShouldSupportNamedUseMapDepthOverload_WhenSourceTypeIsString() {
+        var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
+        RegisterStringAppendMapNamed(mapify, "AppendNamed");
+        RegisterStringSourceNamedDepthMap(mapify, mapName: "NamedDepth", nestedMapName: "AppendNamed", depth: 3);
+
+        var buildMethod = typeof(Mapify).GetMethod("BuildRegisteredMaps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        buildMethod.Invoke(mapify, null);
+
+        var mapped = mapify.Map<ConstantStringSource, ConstantStringTarget>(new ConstantStringSource { Id = 1 }, "NamedDepth");
+
+        Assert.Equal("foo!", mapped.Text);
+    }
+
+    [Fact]
     public void Constructor_ShouldAllowHigherUseMapDepth_WhenHardCapIsIncreased() {
         var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
         mapify.UseMaxRecursiveMapBuildDepth(12);
@@ -1471,6 +1564,50 @@ public class MapifyInstanceTests {
         addPendingMap.Invoke(mapify, [null, partial]);
     }
 
+    private static void RegisterStringAppendMapNamed(Mapify mapify, string name) {
+        Expression<Func<string, string>> partial = x => x + "!";
+
+        var addPendingMap = typeof(Mapify)
+            .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(string), typeof(string));
+        addPendingMap.Invoke(mapify, [name, partial]);
+    }
+
+    private static void RegisterStringSourceNamedDepthMap(Mapify mapify, string mapName, string nestedMapName, int depth) {
+        var sourceParameter = Expression.Parameter(typeof(ConstantStringSource), "x");
+
+        var useMapMarker = typeof(MapifyProfile)
+            .GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            .Single(m => m.Name == "UseMap"
+                && m.IsGenericMethodDefinition
+                && m.GetParameters().Length == 3
+                && m.GetParameters()[0].ParameterType == typeof(string)
+                && m.GetParameters()[2].ParameterType == typeof(int))
+            .MakeGenericMethod(typeof(string), typeof(string));
+
+        var useMapCall = Expression.Call(
+            useMapMarker,
+            Expression.Constant(nestedMapName),
+            Expression.Constant("foo"),
+            Expression.Constant(depth)
+        );
+
+        var body = Expression.MemberInit(
+            Expression.New(typeof(ConstantStringTarget)),
+            Expression.Bind(
+                typeof(ConstantStringTarget).GetProperty(nameof(ConstantStringTarget.Text))!,
+                useMapCall
+            )
+        );
+
+        var partial = Expression.Lambda<Func<ConstantStringSource, ConstantStringTarget>>(body, sourceParameter);
+
+        var addPendingMap = typeof(Mapify)
+            .GetMethod("AddPendingMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .MakeGenericMethod(typeof(ConstantStringSource), typeof(ConstantStringTarget));
+        addPendingMap.Invoke(mapify, [mapName, partial]);
+    }
+
     [Fact]
     public void Map_ShouldUseExistingNestedMapImplicitly_WhenPropertyTypesDiffer() {
         var mapify = new Mapify(new ChildProfile(), new ParentProfile());
@@ -1706,6 +1843,78 @@ public class MapifyInstanceTests {
         ]);
 
         Assert.Equal([2, 3], mapped.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void Map_ShouldPreferExactNullableMap_OverUnderlyingTypeFallback() {
+        var mapify = new Mapify(new NumberProfile(), new NumberNullableExactProfile(), new NullableNumberContainerProfile());
+
+        var mapped = mapify.Map<NullableNumberContainerSource, NullableNumberContainerTarget>(new NullableNumberContainerSource {
+            Number = new NumberSource { Value = 5 }
+        });
+
+        Assert.NotNull(mapped.Number);
+        Assert.Equal(105, mapped.Number!.Value.Value);
+    }
+
+    [Fact]
+    public void Map_ShouldFallbackToUnderlyingNullableMap_WhenExactNullableMapIsMissing() {
+        var mapify = new Mapify(new NumberProfile(), new NullableNumberContainerProfile());
+
+        var mapped = mapify.Map<NullableNumberContainerSource, NullableNumberContainerTarget>(new NullableNumberContainerSource {
+            Number = new NumberSource { Value = 5 }
+        });
+
+        Assert.NotNull(mapped.Number);
+        Assert.Equal(6, mapped.Number!.Value.Value);
+    }
+
+    [Fact]
+    public void GetMap_ShouldRequireExactTypes_AndNotReturnNullableOrElementFallbackMaps() {
+        var mapify = new Mapify(new NumberProfile(), new ElementProfile());
+        mapify.UseDefaultMapIfTypeMapIsMissing(false);
+
+        var nullableMap = mapify.GetMap<NumberSource?, NumberTarget?>();
+        var collectionMap = mapify.GetMap<List<ElementSource>, List<ElementTarget>>();
+
+        Assert.Null(nullableMap);
+        Assert.Null(collectionMap);
+        Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<NumberSource?, NumberTarget?>());
+        Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<List<ElementSource>, List<ElementTarget>>());
+    }
+
+    [Fact]
+    public void Map_ShouldUseAssignableCollectionMap_BeforeElementFallback() {
+        var mapify = new Mapify(new ElementProfile(), new EnumerableElementMapProfile(), new CollectionContainerProfile());
+
+        var mapped = mapify.Map<CollectionContainerSource, CollectionContainerTarget>(new CollectionContainerSource {
+            Items = [new ElementSource { Value = 1 }]
+        });
+
+        Assert.Equal([11], mapped.Items.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void Map_ShouldHandleNullCollectionSource_WithoutThrowing() {
+        var mapify = new Mapify(new ElementProfile(), new NullableCollectionContainerProfile());
+
+        var mapped = mapify.Map<NullableCollectionContainerSource2, NullableCollectionContainerTarget2>(new NullableCollectionContainerSource2 {
+            Items = null
+        });
+
+        Assert.Null(mapped.Items);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowForAmbiguousEnumerableElementType() {
+        var ex = Assert.ThrowsAny<Exception>(() => new Mapify(new AmbiguousCollectionContainerProfile()));
+
+        var effective = ex is TargetInvocationException tie && tie.InnerException != null
+            ? tie.InnerException
+            : ex;
+
+        Assert.IsType<InvalidOperationException>(effective);
+        Assert.Contains("multiple IEnumerable<T> element types", effective.Message, StringComparison.Ordinal);
     }
 
     [Theory]

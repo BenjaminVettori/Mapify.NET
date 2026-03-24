@@ -2,9 +2,9 @@ using System.Linq.Expressions;
 
 namespace Mapify.NET; 
 internal interface IMapifyConfigurator {
-    void CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null);
+    MapifyMapBuilder<TSource, TTarget> CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null);
 
-    void CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial = null);
+    MapifyMapBuilder<TSource, TTarget> CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial = null);
 }
 
 /// <summary>
@@ -43,12 +43,12 @@ public abstract class MapifyProfile {
     /// <exception cref="InvalidOperationException">
     /// Thrown when called outside profile configuration.
     /// </exception>
-    protected void CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null) {
+    protected MapifyMapBuilder<TSource, TTarget> CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial = null) {
         if (_configurator == null) {
             throw new InvalidOperationException("CreateMap can only be called while configuring a profile.");
         }
 
-        _configurator.CreateMap(partial);
+        return _configurator.CreateMap(partial);
     }
 
     /// <summary>
@@ -66,7 +66,7 @@ public abstract class MapifyProfile {
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="name"/> is null, empty, or whitespace.
     /// </exception>
-    protected void CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial = null) {
+    protected MapifyMapBuilder<TSource, TTarget> CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial = null) {
         if (_configurator == null) {
             throw new InvalidOperationException("CreateMap can only be called while configuring a profile.");
         }
@@ -75,7 +75,7 @@ public abstract class MapifyProfile {
             throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
         }
 
-        _configurator.CreateMap(name, partial);
+        return _configurator.CreateMap(name, partial);
     }
 
     /// <summary>

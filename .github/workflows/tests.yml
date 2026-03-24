@@ -22,9 +22,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Install .NET Framework 4.6.2 Developer Pack
-        run: choco install netfx-4.6.2-devpack -y
-
       - name: Restore
         run: dotnet restore
 
@@ -34,5 +31,5 @@ jobs:
       - name: Test - net10 EF Core
         run: dotnet test Mapify.NET.Tests.EFCore/Mapify.NET.Tests.EFCore.csproj -c Release --no-restore
 
-      - name: Test - net462
+      - name: Test - net472
         run: dotnet test Mapify.NET.Tests.NetFx/Mapify.NET.Tests.NetFx.csproj -c Release --no-restore
