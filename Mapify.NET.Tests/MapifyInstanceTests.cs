@@ -435,6 +435,34 @@ public class MapifyInstanceTests {
         public int Value { get; set; }
     }
 
+    private class NullableGuidSource {
+        public Guid? FolderId { get; set; }
+    }
+
+    private class NullableGuidTarget {
+        public bool IsBlob { get; set; }
+    }
+
+    private class NullableGuidDefaultTarget {
+        public bool UsesDefaultGuid { get; set; }
+    }
+
+    private class NullableGuidStringTarget {
+        public bool IsEmptyText { get; set; }
+    }
+
+    private class NullableGuidEqualsTarget {
+        public bool IsDefaultValue { get; set; }
+    }
+
+    private class NullableGuidHashCodeTarget {
+        public int HashCode { get; set; }
+    }
+
+    private class NullableGuidCustomDefaultTarget {
+        public bool UsesCustomDefault { get; set; }
+    }
+
     private class RecursiveNodeSource {
         public int Value { get; set; }
         public RecursiveNodeSource? Next { get; set; }
@@ -1118,6 +1146,35 @@ public class MapifyInstanceTests {
         protected override void Configure() {
             CreateMap<ParameterizedInvalidNameSource, ParameterizedInvalidNameTarget>(x => new ParameterizedInvalidNameTarget {
                 Value = Parameter<int>(" ")
+            });
+        }
+    }
+
+    private class NullableGuidProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NullableGuidSource, NullableGuidTarget>(a => new NullableGuidTarget {
+                IsBlob = !a.FolderId.HasValue
+            });
+
+            CreateMap<NullableGuidSource, NullableGuidDefaultTarget>(a => new NullableGuidDefaultTarget {
+                UsesDefaultGuid = a.FolderId.GetValueOrDefault() == Guid.Empty
+            });
+
+            CreateMap<NullableGuidSource, NullableGuidStringTarget>(a => new NullableGuidStringTarget {
+                IsEmptyText = a.FolderId.ToString() == string.Empty
+            });
+
+            CreateMap<NullableGuidSource, NullableGuidEqualsTarget>(a => new NullableGuidEqualsTarget {
+                IsDefaultValue = a.FolderId.Equals(default(Guid?))
+            });
+
+            CreateMap<NullableGuidSource, NullableGuidHashCodeTarget>(a => new NullableGuidHashCodeTarget {
+                HashCode = a.FolderId.GetHashCode()
+            });
+
+            CreateMap<NullableGuidSource, NullableGuidCustomDefaultTarget>(a => new NullableGuidCustomDefaultTarget {
+                UsesCustomDefault = a.FolderId.GetValueOrDefault(new Guid("11111111-1111-1111-1111-111111111111"))
+                    == new Guid("11111111-1111-1111-1111-111111111111")
             });
         }
     }
@@ -2665,6 +2722,98 @@ public class MapifyInstanceTests {
             .ToArray();
 
         Assert.Equal([11, 12], projected);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepNullableHasValueBooleanSemantics() {
+        var mapify = new Mapify(new NullableGuidProfile());
+
+        var withoutFolder = mapify.Map<NullableGuidSource, NullableGuidTarget>(new NullableGuidSource {
+            FolderId = null
+        });
+        var withFolder = mapify.Map<NullableGuidSource, NullableGuidTarget>(new NullableGuidSource {
+            FolderId = Guid.NewGuid()
+        });
+
+        Assert.True(withoutFolder.IsBlob);
+        Assert.False(withFolder.IsBlob);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepNullableGetValueOrDefaultSemantics() {
+        var mapify = new Mapify(new NullableGuidProfile());
+
+        var withoutFolder = mapify.Map<NullableGuidSource, NullableGuidDefaultTarget>(new NullableGuidSource {
+            FolderId = null
+        });
+        var withFolder = mapify.Map<NullableGuidSource, NullableGuidDefaultTarget>(new NullableGuidSource {
+            FolderId = Guid.NewGuid()
+        });
+
+        Assert.True(withoutFolder.UsesDefaultGuid);
+        Assert.False(withFolder.UsesDefaultGuid);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepNullableToStringSemantics() {
+        var mapify = new Mapify(new NullableGuidProfile());
+
+        var withoutFolder = mapify.Map<NullableGuidSource, NullableGuidStringTarget>(new NullableGuidSource {
+            FolderId = null
+        });
+        var withFolder = mapify.Map<NullableGuidSource, NullableGuidStringTarget>(new NullableGuidSource {
+            FolderId = Guid.NewGuid()
+        });
+
+        Assert.True(withoutFolder.IsEmptyText);
+        Assert.False(withFolder.IsEmptyText);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepNullableEqualsSemantics() {
+        var mapify = new Mapify(new NullableGuidProfile());
+
+        var withoutFolder = mapify.Map<NullableGuidSource, NullableGuidEqualsTarget>(new NullableGuidSource {
+            FolderId = null
+        });
+        var withFolder = mapify.Map<NullableGuidSource, NullableGuidEqualsTarget>(new NullableGuidSource {
+            FolderId = Guid.NewGuid()
+        });
+
+        Assert.True(withoutFolder.IsDefaultValue);
+        Assert.False(withFolder.IsDefaultValue);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepNullableGetHashCodeSemantics() {
+        var mapify = new Mapify(new NullableGuidProfile());
+
+        var folderId = Guid.NewGuid();
+
+        var withoutFolder = mapify.Map<NullableGuidSource, NullableGuidHashCodeTarget>(new NullableGuidSource {
+            FolderId = null
+        });
+        var withFolder = mapify.Map<NullableGuidSource, NullableGuidHashCodeTarget>(new NullableGuidSource {
+            FolderId = folderId
+        });
+
+        Assert.Equal(0, withoutFolder.HashCode);
+        Assert.Equal(folderId.GetHashCode(), withFolder.HashCode);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepNullableGetValueOrDefaultOverloadSemantics() {
+        var mapify = new Mapify(new NullableGuidProfile());
+
+        var withoutFolder = mapify.Map<NullableGuidSource, NullableGuidCustomDefaultTarget>(new NullableGuidSource {
+            FolderId = null
+        });
+        var withFolder = mapify.Map<NullableGuidSource, NullableGuidCustomDefaultTarget>(new NullableGuidSource {
+            FolderId = Guid.NewGuid()
+        });
+
+        Assert.True(withoutFolder.UsesCustomDefault);
+        Assert.False(withFolder.UsesCustomDefault);
     }
 
     [Fact]

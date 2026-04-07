@@ -1239,7 +1239,7 @@ public partial class Mapify {
             if (node.Expression != null) {
                 Visit(node.Expression);
 
-                if (RequiresNullCheck(node.Expression)) {
+                if (RequiresNullCheck(node.Expression) && !IsNullableHasValueAccess(node)) {
                     _checks.Add(CreateHasValueCheck(node.Expression));
                 }
             }
@@ -1251,7 +1251,7 @@ public partial class Mapify {
             if (node.Object != null) {
                 Visit(node.Object);
 
-                if (RequiresNullCheck(node.Object)) {
+                if (RequiresNullCheck(node.Object) && !IsSafeNullableMethodCall(node)) {
                     _checks.Add(CreateHasValueCheck(node.Object));
                 }
             }
@@ -1265,6 +1265,43 @@ public partial class Mapify {
 
         protected override Expression VisitLambda<T>(Expression<T> node)
             => node;
+
+        private static bool IsNullableHasValueAccess(MemberExpression node) {
+            if (node.Member.Name != "HasValue") {
+                return false;
+            }
+
+            var nullableCarrierType = node.Member.DeclaringType ?? node.Expression?.Type;
+            return nullableCarrierType != null && Nullable.GetUnderlyingType(nullableCarrierType) != null;
+        }
+
+        private static bool IsSafeNullableMethodCall(MethodCallExpression node) {
+            if (node.Object == null) {
+                return false;
+            }
+
+            if (Nullable.GetUnderlyingType(node.Object.Type) == null) {
+                return false;
+            }
+
+            if (node.Method.Name == nameof(Nullable<int>.GetValueOrDefault)) {
+                return node.Arguments.Count == 0 || node.Arguments.Count == 1;
+            }
+
+            if (node.Method.Name == nameof(ToString)) {
+                return node.Arguments.Count == 0;
+            }
+
+            if (node.Method.Name == nameof(GetHashCode)) {
+                return node.Arguments.Count == 0;
+            }
+
+            if (node.Method.Name == nameof(Equals)) {
+                return node.Arguments.Count == 1;
+            }
+
+            return false;
+        }
 
         private static bool RequiresNullCheck(Expression expression)
             => CanBeNull(expression.Type) && expression is not ParameterExpression;
