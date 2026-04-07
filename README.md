@@ -183,6 +183,9 @@ When an intermediate source member is `null`, Mapify emits a conditional express
 
 - destination member is nullable: result is `null`
 - destination member is non-nullable: result is the configured fallback/default value
+- boolean condition expressions are also guarded. For chained comparisons against `null`,
+  Mapify preserves expected semantics (for example `x.NullChain.Member == null` evaluates to `true`
+  when the chain is broken by `null`).
 
 Example:
 

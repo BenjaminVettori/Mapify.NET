@@ -73,6 +73,31 @@ public class MapifyInstanceTests {
         public MarkerChildTarget Child { get; set; } = new MarkerChildTarget();
     }
 
+    private class NullChainLeafSource {
+        public int Value { get; set; }
+    }
+
+    private class NullChainMiddleSource {
+        public NullChainLeafSource? Child { get; set; }
+    }
+
+    private class NullChainRootSource {
+        public NullChainMiddleSource? NullProperty { get; set; }
+    }
+
+    private class NullChainLeafTarget {
+        public int Value { get; set; }
+    }
+
+    private class NullChainRootTarget {
+        public NullChainLeafTarget? ChildDto { get; set; }
+    }
+
+    private class NullChainConditionTarget {
+        public bool IsMissing { get; set; }
+        public bool HasPositiveValue { get; set; }
+    }
+
     private class LeafSource {
         public int Number { get; set; }
     }
@@ -700,6 +725,21 @@ public class MapifyInstanceTests {
     private class MarkerChildProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<MarkerChildSource, MarkerChildTarget>(x => new MarkerChildTarget { Number = x.Number + 1 });
+        }
+    }
+
+    private class UseMapNullChainProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NullChainLeafSource, NullChainLeafTarget>();
+
+            CreateMap<NullChainRootSource, NullChainRootTarget>(parent => new NullChainRootTarget {
+                ChildDto = UseMap<NullChainLeafSource, NullChainLeafTarget>(parent.NullProperty!.Child!)
+            });
+
+            CreateMap<NullChainRootSource, NullChainConditionTarget>(parent => new NullChainConditionTarget {
+                IsMissing = parent.NullProperty!.Child == null,
+                HasPositiveValue = parent.NullProperty!.Child != null && parent.NullProperty.Child.Value > 0
+            });
         }
     }
 
@@ -1932,6 +1972,43 @@ public class MapifyInstanceTests {
 
         Assert.NotNull(mapped.Child);
         Assert.Equal(13, mapped.Child.Number);
+    }
+
+    [Fact]
+    public void Map_UseMapMarker_ShouldNotThrow_WhenSourceArgumentChainContainsNull() {
+        var mapify = new Mapify(new UseMapNullChainProfile());
+
+        var mapped = mapify.Map<NullChainRootSource, NullChainRootTarget>(new NullChainRootSource {
+            NullProperty = null
+        });
+
+        Assert.Null(mapped.ChildDto);
+    }
+
+    [Fact]
+    public void Map_BooleanNullChainEquality_ShouldTreatBrokenChainAsNull() {
+        var mapify = new Mapify(new UseMapNullChainProfile());
+
+        var mapped = mapify.Map<NullChainRootSource, NullChainConditionTarget>(new NullChainRootSource {
+            NullProperty = null
+        });
+
+        Assert.True(mapped.IsMissing);
+        Assert.False(mapped.HasPositiveValue);
+    }
+
+    [Fact]
+    public void Map_BooleanNullChainPredicates_ShouldEvaluateWhenChainHasValue() {
+        var mapify = new Mapify(new UseMapNullChainProfile());
+
+        var mapped = mapify.Map<NullChainRootSource, NullChainConditionTarget>(new NullChainRootSource {
+            NullProperty = new NullChainMiddleSource {
+                Child = new NullChainLeafSource { Value = 5 }
+            }
+        });
+
+        Assert.False(mapped.IsMissing);
+        Assert.True(mapped.HasPositiveValue);
     }
 
     [Fact]

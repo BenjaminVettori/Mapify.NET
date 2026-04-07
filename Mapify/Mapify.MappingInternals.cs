@@ -1060,11 +1060,14 @@ public partial class Mapify {
     ) {
         adaptedSource = sourceAccess;
         sourceHasValueCheck = null;
+        var nestedSourceNullCheck = BuildNestedMemberAccessGuard(sourceAccess);
 
         if (sourceAccess.Type == mapSourceType) {
             if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
                 sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
+
+            sourceHasValueCheck = CombineNullChecks(nestedSourceNullCheck, sourceHasValueCheck);
             return true;
         }
 
@@ -1073,11 +1076,13 @@ public partial class Mapify {
 
         if (sourceNullableUnderlying != null && sourceNullableUnderlying == mapSourceType) {
             sourceHasValueCheck = Expression.NotEqual(sourceAccess, Expression.Constant(null, sourceAccess.Type));
+            sourceHasValueCheck = CombineNullChecks(nestedSourceNullCheck, sourceHasValueCheck);
             adaptedSource = Expression.Property(sourceAccess, "Value");
             return true;
         }
 
         if (mapNullableUnderlying != null && sourceAccess.Type == mapNullableUnderlying) {
+            sourceHasValueCheck = CombineNullChecks(nestedSourceNullCheck, sourceHasValueCheck);
             adaptedSource = Expression.Convert(sourceAccess, mapSourceType);
             return true;
         }
@@ -1086,11 +1091,25 @@ public partial class Mapify {
             if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
                 sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
+
+            sourceHasValueCheck = CombineNullChecks(nestedSourceNullCheck, sourceHasValueCheck);
             adaptedSource = sourceAccess;
             return true;
         }
 
         return false;
+    }
+
+    private static Expression? CombineNullChecks(Expression? left, Expression? right) {
+        if (left == null) {
+            return right;
+        }
+
+        if (right == null) {
+            return left;
+        }
+
+        return Expression.AndAlso(left, right);
     }
 
     private static bool TryAdaptMappedResult(Expression mappedBody, Type targetType, out Expression adaptedResult) {
@@ -1163,7 +1182,11 @@ public partial class Mapify {
             return expression;
         }
 
-        return Expression.Condition(guard, expression, AdaptFallbackToType(fallback, expression.Type));
+        var guardedFallback = expression.Type == typeof(bool)
+            ? CreateBooleanNullFallback(expression)
+            : AdaptFallbackToType(fallback, expression.Type);
+
+        return Expression.Condition(guard, expression, guardedFallback);
     }
 
     private static Expression ApplyNestedNullSafetyToBooleanExpression(Expression testExpression) {
@@ -1179,8 +1202,28 @@ public partial class Mapify {
             return testExpression;
         }
 
-        return Expression.Condition(guard, testExpression, Expression.Constant(false));
+        return Expression.Condition(guard, testExpression, CreateBooleanNullFallback(testExpression));
     }
+
+    private static Expression CreateBooleanNullFallback(Expression booleanExpression) {
+        if (booleanExpression is BinaryExpression binaryExpression
+            && (binaryExpression.NodeType == ExpressionType.Equal || binaryExpression.NodeType == ExpressionType.NotEqual)) {
+            var leftIsNull = IsNullConstant(binaryExpression.Left);
+            var rightIsNull = IsNullConstant(binaryExpression.Right);
+
+            if (leftIsNull ^ rightIsNull) {
+                var comparedExpression = leftIsNull ? binaryExpression.Right : binaryExpression.Left;
+                if (CanBeNull(comparedExpression.Type)) {
+                    return Expression.Constant(binaryExpression.NodeType == ExpressionType.Equal);
+                }
+            }
+        }
+
+        return Expression.Constant(false);
+    }
+
+    private static bool IsNullConstant(Expression expression)
+        => expression is ConstantExpression constantExpression && constantExpression.Value == null;
 
     private static Expression CreateAssignmentFallbackExpression(Type targetType, PropertyInfo? destinationProperty) {
         var fallback = destinationProperty != null
