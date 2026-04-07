@@ -380,6 +380,37 @@ public class MapifyInstanceTests {
         public ProjectToNamedPhoneTarget[] Phones { get; set; } = [];
     }
 
+    private class ProjectToOuterScopeDataSource {
+        public string DeviceNumber { get; set; } = string.Empty;
+    }
+
+    private class ProjectToOuterScopePartTypeSource {
+        public int Id { get; set; }
+    }
+
+    private class ProjectToOuterScopePartTypeTarget {
+        public int Id { get; set; }
+    }
+
+    private class ProjectToOuterScopePartSource {
+        public ProjectToOuterScopePartTypeSource PartType { get; set; } = new ProjectToOuterScopePartTypeSource();
+        public string SerialNumber { get; set; } = string.Empty;
+    }
+
+    private class ProjectToOuterScopePartTarget {
+        public ProjectToOuterScopePartTypeTarget PartType { get; set; } = new ProjectToOuterScopePartTypeTarget();
+        public string SerialNumber { get; set; } = string.Empty;
+    }
+
+    private class ProjectToOuterScopeSource {
+        public ProjectToOuterScopeDataSource Data { get; set; } = new ProjectToOuterScopeDataSource();
+        public IEnumerable<ProjectToOuterScopePartSource> Parts { get; set; } = [];
+    }
+
+    private class ProjectToOuterScopeTarget {
+        public ProjectToOuterScopePartTarget[] Part { get; set; } = [];
+    }
+
     private class ParameterizedSource {
         public int Value { get; set; }
     }
@@ -462,6 +493,19 @@ public class MapifyInstanceTests {
 
     private class NullSafePersonCoalesceTarget {
         public int Number { get; set; }
+    }
+
+    private class NullSafePartSource {
+        public string? Name { get; set; }
+        public NullSafePartSource? SomeOtherPart { get; set; }
+    }
+
+    private class NullSafePartContainerSource {
+        public IEnumerable<NullSafePartSource> Parts { get; set; } = [];
+    }
+
+    private class NullSafePartContainerTarget {
+        public string[] PartNames { get; set; } = [];
     }
 
     private enum FaultProfileMode {
@@ -997,6 +1041,23 @@ public class MapifyInstanceTests {
         }
     }
 
+    private class ProjectToOuterScopeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ProjectToOuterScopePartTypeSource, ProjectToOuterScopePartTypeTarget>();
+            CreateMap<ProjectToOuterScopePartSource, ProjectToOuterScopePartTarget>();
+
+            CreateMap<ProjectToOuterScopeSource, ProjectToOuterScopeTarget>(t => new ProjectToOuterScopeTarget {
+                Part = t.Parts
+                    .ProjectTo<ProjectToOuterScopePartTarget>()
+                    .Select(p => new ProjectToOuterScopePartTarget {
+                        PartType = p.PartType,
+                        SerialNumber = p.PartType.Id == 1 ? t.Data.DeviceNumber : p.SerialNumber
+                    })
+                    .ToArray()
+            });
+        }
+    }
+
     private class ProjectToNamedPhoneProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<ProjectToNamedPhoneSource, ProjectToNamedPhoneTarget>("Raw", x => new ProjectToNamedPhoneTarget {
@@ -1093,6 +1154,12 @@ public class MapifyInstanceTests {
                 Number = x.Address!.Street!.Leaf!.OptionalNumber
                     ?? x.SecondaryAddress!.Street!.Leaf!.OptionalNumber
                     ?? 0
+            });
+
+            CreateMap<NullSafePartContainerSource, NullSafePartContainerTarget>(x => new NullSafePartContainerTarget {
+                PartNames = x.Parts
+                    .Select(p => p.Name ?? p.SomeOtherPart!.Name ?? "unknown")
+                    .ToArray()
             });
         }
     }
@@ -1754,6 +1821,28 @@ public class MapifyInstanceTests {
         });
 
         Assert.Equal(0, mapped.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldGuardNestedFallbackBranch_InCoalesceExpressionInsideLambda() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<NullSafePartContainerSource, NullSafePartContainerTarget>(new NullSafePartContainerSource {
+            Parts = [
+                new NullSafePartSource {
+                    Name = null,
+                    SomeOtherPart = null
+                },
+                new NullSafePartSource {
+                    Name = null,
+                    SomeOtherPart = new NullSafePartSource {
+                        Name = "secondary"
+                    }
+                }
+            ]
+        });
+
+        Assert.Equal(["unknown", "secondary"], mapped.PartNames);
     }
 
     [Fact]
@@ -2520,6 +2609,28 @@ public class MapifyInstanceTests {
         });
 
         Assert.Equal(["A-mapped", "B-mapped"], mapped.Addresses.Select(x => x.StreetName).ToArray());
+    }
+
+    [Fact]
+    public void CreateMap_ShouldAllowNestedProjectToSelect_WithOuterScopeAccess() {
+        var mapify = new Mapify(new ProjectToOuterScopeProfile());
+
+        var mapped = mapify.Map<ProjectToOuterScopeSource, ProjectToOuterScopeTarget>(new ProjectToOuterScopeSource {
+            Data = new ProjectToOuterScopeDataSource { DeviceNumber = "DEV-42" },
+            Parts = [
+                new ProjectToOuterScopePartSource {
+                    PartType = new ProjectToOuterScopePartTypeSource { Id = 1 },
+                    SerialNumber = "S-1"
+                },
+                new ProjectToOuterScopePartSource {
+                    PartType = new ProjectToOuterScopePartTypeSource { Id = 2 },
+                    SerialNumber = "S-2"
+                }
+            ]
+        });
+
+        Assert.Equal(["DEV-42", "S-2"], mapped.Part.Select(x => x.SerialNumber).ToArray());
+        Assert.Equal([1, 2], mapped.Part.Select(x => x.PartType.Id).ToArray());
     }
 
     [Fact]

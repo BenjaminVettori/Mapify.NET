@@ -220,12 +220,7 @@ public partial class Mapify {
         }
 
         if (expr is BinaryExpression binaryExpr && binaryExpr.NodeType == ExpressionType.Coalesce) {
-            var test = Expression.NotEqual(binaryExpr.Left, Expression.Constant(null, binaryExpr.Left.Type));
-            var value = Nullable.GetUnderlyingType(binaryExpr.Left.Type) != null
-                 && (binaryExpr.Right is not ConstantExpression rightConst || rightConst.Value != null)
-                ? Expression.Property(binaryExpr.Left, "Value")
-                : binaryExpr.Left;
-            expr = Expression.Condition(test, value, binaryExpr.Right);
+            expr = NormalizeCoalesceToConditional(binaryExpr);
         }
 
         if (tryMapExpressionToDestinationProperty && destinationProperty != null) {
@@ -1138,11 +1133,17 @@ public partial class Mapify {
     }
 
     private static Expression ApplyNestedNullSafety(Expression expression, PropertyInfo? destinationProperty) {
+        expression = new LambdaBodyNullSafetyRewriter().Visit(expression)!;
         var fallback = CreateAssignmentFallbackExpression(expression.Type, destinationProperty);
         return ApplyNestedNullSafetyCore(expression, fallback);
     }
 
     private static Expression ApplyNestedNullSafetyCore(Expression expression, Expression fallback) {
+        if (expression is BinaryExpression binaryExpression && binaryExpression.NodeType == ExpressionType.Coalesce) {
+            var normalized = NormalizeCoalesceToConditional(binaryExpression);
+            return ApplyNestedNullSafetyCore(normalized, fallback);
+        }
+
         if (expression is ConditionalExpression conditionalExpression) {
             var guardedTest = ApplyNestedNullSafetyToBooleanExpression(conditionalExpression.Test);
             var guardedIfTrue = ApplyNestedNullSafetyCore(
@@ -1201,6 +1202,23 @@ public partial class Mapify {
         return CreateDefaultValueExpression(targetType);
     }
 
+    private static Expression NormalizeCoalesceToConditional(BinaryExpression coalesceExpression) {
+        var test = Expression.NotEqual(coalesceExpression.Left, Expression.Constant(null, coalesceExpression.Left.Type));
+        var value = Nullable.GetUnderlyingType(coalesceExpression.Left.Type) != null
+             && (coalesceExpression.Right is not ConstantExpression rightConst || rightConst.Value != null)
+            ? Expression.Property(coalesceExpression.Left, "Value")
+            : coalesceExpression.Left;
+
+        return Expression.Condition(test, value, coalesceExpression.Right);
+    }
+
+    private sealed class LambdaBodyNullSafetyRewriter : ExpressionVisitor {
+        protected override Expression VisitLambda<T>(Expression<T> node) {
+            var guardedBody = ApplyNestedNullSafetyCore(node.Body, CreateDefaultValueExpression(node.Body.Type));
+            return Expression.Lambda<T>(guardedBody, node.Parameters);
+        }
+    }
+
     private sealed class NestedMemberAccessNullGuardCollector : ExpressionVisitor {
         private readonly List<Expression> _checks = [];
 
@@ -1244,6 +1262,9 @@ public partial class Mapify {
 
             return node;
         }
+
+        protected override Expression VisitLambda<T>(Expression<T> node)
+            => node;
 
         private static bool RequiresNullCheck(Expression expression)
             => CanBeNull(expression.Type) && expression is not ParameterExpression;
