@@ -434,6 +434,36 @@ public class MapifyInstanceTests {
         public RecursiveNodeDepthElevenTarget? Next { get; set; }
     }
 
+    private class NullSafeLeafSource {
+        public int Number { get; set; }
+        public int? OptionalNumber { get; set; }
+    }
+
+    private class NullSafeStreetSource {
+        public NullSafeLeafSource? Leaf { get; set; }
+    }
+
+    private class NullSafeAddressSource {
+        public NullSafeStreetSource? Street { get; set; }
+    }
+
+    private class NullSafePersonSource {
+        public NullSafeAddressSource? Address { get; set; }
+        public NullSafeAddressSource? SecondaryAddress { get; set; }
+    }
+
+    private class NullSafePersonTarget {
+        public int Number { get; set; }
+    }
+
+    private class NullSafePersonNullableTarget {
+        public int? Number { get; set; }
+    }
+
+    private class NullSafePersonCoalesceTarget {
+        public int Number { get; set; }
+    }
+
     private enum FaultProfileMode {
         None,
         WhitespaceName,
@@ -1045,6 +1075,24 @@ public class MapifyInstanceTests {
             CreateMap<RecursiveNodeDepthThreeSource, RecursiveNodeDepthThreeTarget>(x => new RecursiveNodeDepthThreeTarget {
                 Value = x.Value,
                 Next = UseMap<RecursiveNodeDepthThreeSource?, RecursiveNodeDepthThreeTarget?>(x.Next, 3)
+            });
+        }
+    }
+
+    private class NullSafeNestedMemberAccessProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NullSafePersonSource, NullSafePersonTarget>(x => new NullSafePersonTarget {
+                Number = x.Address!.Street!.Leaf!.Number
+            });
+
+            CreateMap<NullSafePersonSource, NullSafePersonNullableTarget>(x => new NullSafePersonNullableTarget {
+                Number = x.Address!.Street!.Leaf!.Number
+            });
+
+            CreateMap<NullSafePersonSource, NullSafePersonCoalesceTarget>(x => new NullSafePersonCoalesceTarget {
+                Number = x.Address!.Street!.Leaf!.OptionalNumber
+                    ?? x.SecondaryAddress!.Street!.Leaf!.OptionalNumber
+                    ?? 0
             });
         }
     }
@@ -1670,6 +1718,42 @@ public class MapifyInstanceTests {
         Assert.NotNull(r4Value.Number);
         Assert.Equal(5, r4Value.Number!.Value.Value);
         Assert.Null(r4Null.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldApplyFallback_ForNullNestedMemberChain_WhenDestinationIsNonNullable() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<NullSafePersonSource, NullSafePersonTarget>(new NullSafePersonSource {
+            Address = new NullSafeAddressSource {
+                Street = null
+            }
+        });
+
+        Assert.Equal(0, mapped.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldApplyNull_ForNullNestedMemberChain_WhenDestinationIsNullable() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<NullSafePersonSource, NullSafePersonNullableTarget>(new NullSafePersonSource {
+            Address = null
+        });
+
+        Assert.Null(mapped.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldGuardNestedFallbackBranch_InCoalesceExpression() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<NullSafePersonSource, NullSafePersonCoalesceTarget>(new NullSafePersonSource {
+            Address = null,
+            SecondaryAddress = null
+        });
+
+        Assert.Equal(0, mapped.Number);
     }
 
     [Fact]
