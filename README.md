@@ -178,6 +178,22 @@ Binding precedence is:
 
 DSL value expressions run through the same marker pipeline, so markers like `UseMap`, `Ignore`, and `Parameter` also work in `.Map(...)`.
 
+Nested member access is null-safe for both in-memory mapping and `IQueryable` projection.
+When an intermediate source member is `null`, Mapify emits a conditional expression:
+
+- destination member is nullable: result is `null`
+- destination member is non-nullable: result is the configured fallback/default value
+
+Example:
+
+```csharp
+CreateMap<Person, PersonDto>(p => new PersonDto {
+    // If Address, Address.Street, or Address.Street.Name is null,
+    // StreetName gets fallback based on destination nullability.
+    StreetName = p.Address.Street.Name
+});
+```
+
 Example with markers in DSL mappings:
 
 ```csharp

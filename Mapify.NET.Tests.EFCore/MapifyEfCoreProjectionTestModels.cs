@@ -6,6 +6,7 @@ public partial class MapifyEfCoreProjectionTests {
     private sealed class EfCoreMapifyContext(DbContextOptions<EfCoreMapifyContext> options) : DbContext(options) {
         public DbSet<EfCorePerson> People => Set<EfCorePerson>();
         public DbSet<EfCoreAddress> Addresses => Set<EfCoreAddress>();
+        public DbSet<EfCoreStreet> Streets => Set<EfCoreStreet>();
         public DbSet<EfCorePhone> Phones => Set<EfCorePhone>();
         public DbSet<EfCoreRecursiveNode> RecursiveNodes => Set<EfCoreRecursiveNode>();
         public DbSet<EfCoreProjectionIgnoreEntity> ProjectionIgnoreEntities => Set<EfCoreProjectionIgnoreEntity>();
@@ -42,6 +43,13 @@ public partial class MapifyEfCoreProjectionTests {
     private sealed class EfCoreAddress {
         public int Id { get; set; }
         public string City { get; set; } = string.Empty;
+        public int? StreetId { get; set; }
+        public EfCoreStreet? Street { get; set; }
+    }
+
+    private sealed class EfCoreStreet {
+        public int Id { get; set; }
+        public int Number { get; set; }
     }
 
     private sealed class EfCorePhone {
@@ -116,5 +124,13 @@ public partial class MapifyEfCoreProjectionTests {
 
     private sealed class EfCorePersonRuntimeParameterDto {
         public int AdjustedId { get; set; }
+    }
+
+    private sealed class EfCorePersonStreetNumberDto {
+        public int StreetNumber { get; set; }
+    }
+
+    private sealed class EfCorePersonStreetNullableNumberDto {
+        public int? StreetNumber { get; set; }
     }
 }

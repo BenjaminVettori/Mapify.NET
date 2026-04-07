@@ -125,6 +125,65 @@ public partial class MapifyEfCoreProjectionTests {
     }
 
     [Fact]
+    public void InstanceMapify_ProjectTo_ShouldApplyNestedNullFallback_ForNullableAndNonNullableTargets() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+
+        db.People.AddRange(
+            new EfCorePerson {
+                FirstName = "Has",
+                LastName = "Street",
+                HomeAddress = new EfCoreAddress {
+                    City = "Paris",
+                    Street = new EfCoreStreet { Number = 77 }
+                }
+            },
+            new EfCorePerson {
+                FirstName = "No",
+                LastName = "Street",
+                HomeAddress = new EfCoreAddress {
+                    City = "Rome",
+                    Street = null
+                }
+            },
+            new EfCorePerson {
+                FirstName = "No",
+                LastName = "Address",
+                HomeAddress = null!
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCorePersonStreetNumberProfile(),
+            new EfCorePersonStreetNullableNumberProfile()
+        ]);
+
+        var nonNullableProjection = db.People
+            .OrderBy(x => x.Id)
+            .ProjectTo<EfCorePersonStreetNumberDto>(mapify)
+            .Select(x => x.StreetNumber)
+            .OrderBy(x => x)
+            .ToArray();
+
+        var nullableProjection = db.People
+            .OrderBy(x => x.Id)
+            .ProjectTo<EfCorePersonStreetNullableNumberDto>(mapify)
+            .Select(x => x.StreetNumber)
+            .OrderBy(x => x)
+            .ToArray();
+
+        Assert.Equal(new[] { 0, 0, 77 }, nonNullableProjection);
+        Assert.Equal(new int?[] { null, null, 77 }, nullableProjection);
+    }
+
+    [Fact]
     public void InstanceMapify_NestedNamedProjectToMarker_ShouldWorkInEfCoreProjection() {
         var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))

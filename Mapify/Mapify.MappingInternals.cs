@@ -204,6 +204,7 @@ public partial class Mapify {
         isIgnored = false;
 
         var expr = destinationExpression;
+        var destinationProperty = destinationMember as PropertyInfo;
 
         if (TryResolveIgnoreMarker(destinationMember, expr, destinationType, out var ignoredBinding)) {
             isIgnored = true;
@@ -227,7 +228,7 @@ public partial class Mapify {
             expr = Expression.Condition(test, value, binaryExpr.Right);
         }
 
-        if (tryMapExpressionToDestinationProperty && destinationMember is PropertyInfo destinationProperty) {
+        if (tryMapExpressionToDestinationProperty && destinationProperty != null) {
             if (!TryAdaptMappedResult(expr, destinationProperty.PropertyType, out var adaptedExpression)) {
                 if (existingMapResolver == null
                     || !TryBuildMappedExpression(expr, expr.Type, destinationProperty.PropertyType, existingMapResolver, null, out adaptedExpression, out var sourceNullCheck)) {
@@ -249,6 +250,8 @@ public partial class Mapify {
 
             expr = adaptedExpression;
         }
+
+        expr = ApplyNestedNullSafety(expr, destinationProperty);
 
         return Expression.Bind(destinationMember, expr);
     }
@@ -1127,6 +1130,124 @@ public partial class Mapify {
 
     private static bool CanBeNull(Type type)
         => !type.IsValueType || Nullable.GetUnderlyingType(type) != null;
+
+    private static Expression? BuildNestedMemberAccessGuard(Expression expression) {
+        var collector = new NestedMemberAccessNullGuardCollector();
+        collector.Visit(expression);
+        return collector.BuildGuard();
+    }
+
+    private static Expression ApplyNestedNullSafety(Expression expression, PropertyInfo? destinationProperty) {
+        var fallback = CreateAssignmentFallbackExpression(expression.Type, destinationProperty);
+        return ApplyNestedNullSafetyCore(expression, fallback);
+    }
+
+    private static Expression ApplyNestedNullSafetyCore(Expression expression, Expression fallback) {
+        if (expression is ConditionalExpression conditionalExpression) {
+            var guardedTest = ApplyNestedNullSafetyToBooleanExpression(conditionalExpression.Test);
+            var guardedIfTrue = ApplyNestedNullSafetyCore(
+                conditionalExpression.IfTrue,
+                AdaptFallbackToType(fallback, conditionalExpression.IfTrue.Type)
+            );
+            var guardedIfFalse = ApplyNestedNullSafetyCore(
+                conditionalExpression.IfFalse,
+                AdaptFallbackToType(fallback, conditionalExpression.IfFalse.Type)
+            );
+
+            return Expression.Condition(guardedTest, guardedIfTrue, guardedIfFalse);
+        }
+
+        var guard = BuildNestedMemberAccessGuard(expression);
+        if (guard == null) {
+            return expression;
+        }
+
+        return Expression.Condition(guard, expression, AdaptFallbackToType(fallback, expression.Type));
+    }
+
+    private static Expression ApplyNestedNullSafetyToBooleanExpression(Expression testExpression) {
+        if (testExpression is ConditionalExpression conditionalExpression) {
+            var guardedTest = ApplyNestedNullSafetyToBooleanExpression(conditionalExpression.Test);
+            var guardedIfTrue = ApplyNestedNullSafetyToBooleanExpression(conditionalExpression.IfTrue);
+            var guardedIfFalse = ApplyNestedNullSafetyToBooleanExpression(conditionalExpression.IfFalse);
+            return Expression.Condition(guardedTest, guardedIfTrue, guardedIfFalse);
+        }
+
+        var guard = BuildNestedMemberAccessGuard(testExpression);
+        if (guard == null) {
+            return testExpression;
+        }
+
+        return Expression.Condition(guard, testExpression, Expression.Constant(false));
+    }
+
+    private static Expression CreateAssignmentFallbackExpression(Type targetType, PropertyInfo? destinationProperty) {
+        var fallback = destinationProperty != null
+            ? CreatePropertyDefaultValueExpression(destinationProperty)
+            : CreateDefaultValueExpression(targetType);
+
+        return AdaptFallbackToType(fallback, targetType);
+    }
+
+    private static Expression AdaptFallbackToType(Expression fallback, Type targetType) {
+        if (fallback.Type == targetType) {
+            return fallback;
+        }
+
+        if (TryAdaptMappedResult(fallback, targetType, out var adapted)) {
+            return adapted;
+        }
+
+        return CreateDefaultValueExpression(targetType);
+    }
+
+    private sealed class NestedMemberAccessNullGuardCollector : ExpressionVisitor {
+        private readonly List<Expression> _checks = [];
+
+        public Expression? BuildGuard() {
+            if (_checks.Count == 0) {
+                return null;
+            }
+
+            Expression combined = _checks[0];
+            for (var i = 1; i < _checks.Count; i++) {
+                combined = Expression.AndAlso(combined, _checks[i]);
+            }
+
+            return combined;
+        }
+
+        protected override Expression VisitMember(MemberExpression node) {
+            if (node.Expression != null) {
+                Visit(node.Expression);
+
+                if (RequiresNullCheck(node.Expression)) {
+                    _checks.Add(CreateHasValueCheck(node.Expression));
+                }
+            }
+
+            return node;
+        }
+
+        protected override Expression VisitMethodCall(MethodCallExpression node) {
+            if (node.Object != null) {
+                Visit(node.Object);
+
+                if (RequiresNullCheck(node.Object)) {
+                    _checks.Add(CreateHasValueCheck(node.Object));
+                }
+            }
+
+            foreach (var argument in node.Arguments) {
+                Visit(argument);
+            }
+
+            return node;
+        }
+
+        private static bool RequiresNullCheck(Expression expression)
+            => CanBeNull(expression.Type) && expression is not ParameterExpression;
+    }
 
     private static bool IsCollectionLikeType(Type type)
         => type != typeof(string)

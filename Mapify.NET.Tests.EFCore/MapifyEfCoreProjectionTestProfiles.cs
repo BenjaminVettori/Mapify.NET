@@ -132,6 +132,22 @@ public partial class MapifyEfCoreProjectionTests {
         }
     }
 
+    private sealed class EfCorePersonStreetNumberProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCorePersonStreetNumberDto>(x => new EfCorePersonStreetNumberDto {
+                StreetNumber = x.HomeAddress.Street!.Number
+            });
+        }
+    }
+
+    private sealed class EfCorePersonStreetNullableNumberProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCorePerson, EfCorePersonStreetNullableNumberDto>(x => new EfCorePersonStreetNullableNumberDto {
+                StreetNumber = x.HomeAddress.Street!.Number
+            });
+        }
+    }
+
     private sealed class EfCoreRecursiveNodeDefaultDepthProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCoreRecursiveNode, EfCoreRecursiveNodeDto>(x => new EfCoreRecursiveNodeDto {
