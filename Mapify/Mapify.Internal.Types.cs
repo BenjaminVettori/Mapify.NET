@@ -1,5 +1,4 @@
 using System.Linq.Expressions;
-using System.Reflection;
 
 namespace Mapify.NET;
 
@@ -95,16 +94,6 @@ public partial class Mapify {
             }
 
             throw new InvalidOperationException("UseMap depth argument must be a constant positive integer.");
-        }
-
-        private static bool IsUseMapMarker(MethodInfo method) {
-            if (!method.IsGenericMethod || method.DeclaringType != typeof(MapifyProfile)) {
-                return false;
-            }
-
-            var genericDefinition = method.GetGenericMethodDefinition();
-            return string.Equals(genericDefinition.Name, "UseMap", StringComparison.Ordinal)
-                   && genericDefinition.GetGenericArguments().Length == 2;
         }
     }
 }

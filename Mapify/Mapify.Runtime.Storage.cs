@@ -29,20 +29,14 @@ public partial class Mapify {
         var expression = (Expression<Func<TSource, TTarget>>)mappingExpression;
 
         _converters[key] = expression;
-        _compiledMapToExistingCache.Remove(key);
-        _compiledMapToNewCache.Remove(key);
 
         if (!compileCaches) {
+            _compiledMapToExistingCache.Remove(key);
+            _compiledMapToNewCache.Remove(key);
             return;
         }
 
-        if (!ContainsParameterMarkers(expression)) {
-            _compiledMapToNewCache[key] = expression.Compile();
-        }
-
-        if (expression.Body is MemberInitExpression && !ContainsParameterMarkers(expression)) {
-            _compiledMapToExistingCache[key] = CompileMapper(expression);
-        }
+        UpdateCompiledMapCaches(key, expression, clearExisting: true);
     }
 
     private void AddMap<TSource, TTarget>(Expression<Func<TSource, TTarget>> mappingExpression, string? name = null) {
@@ -53,11 +47,26 @@ public partial class Mapify {
         }
 
         _converters[key] = mappingExpression;
-        if (!ContainsParameterMarkers(mappingExpression)) {
-            _compiledMapToNewCache[key] = mappingExpression.Compile();
+        UpdateCompiledMapCaches(key, mappingExpression, clearExisting: false);
+    }
+
+    private void UpdateCompiledMapCaches<TSource, TTarget>(
+        MapKey key,
+        Expression<Func<TSource, TTarget>> mappingExpression,
+        bool clearExisting
+    ) {
+        if (clearExisting) {
+            _compiledMapToExistingCache.Remove(key);
+            _compiledMapToNewCache.Remove(key);
         }
 
-        if (mappingExpression.Body is MemberInitExpression && !ContainsParameterMarkers(mappingExpression)) {
+        if (ContainsParameterMarkers(mappingExpression)) {
+            return;
+        }
+
+        _compiledMapToNewCache[key] = mappingExpression.Compile();
+
+        if (mappingExpression.Body is MemberInitExpression) {
             _compiledMapToExistingCache[key] = CompileMapper(mappingExpression);
         }
     }

@@ -99,14 +99,7 @@ public partial class Mapify {
         }
 
         if (_useDefaultMapIfTypeMapIsMissing) {
-            var defaultCacheKey = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
-            if (_defaultMapCache.TryGetValue(defaultCacheKey, out var existingDefaultMap)) {
-                return ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
-            }
-
-            var defaultMap = CreateMap<TSource, TTarget>(null, null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
-            _defaultMapCache[defaultCacheKey] = defaultMap;
-            return ApplyParameters(defaultMap, parameters);
+            return GetOrCreateDefaultMap<TSource, TTarget>(parameters);
         }
 
         return null;

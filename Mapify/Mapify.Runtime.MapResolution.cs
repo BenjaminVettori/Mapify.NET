@@ -17,14 +17,7 @@ public partial class Mapify {
         }
 
         if (name == null && _useDefaultMapIfTypeMapIsMissing) {
-            var defaultCacheKey = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
-            if (_defaultMapCache.TryGetValue(defaultCacheKey, out var existingDefaultMap)) {
-                return ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
-            }
-
-            var defaultMap = CreateMap<TSource, TTarget>(null, null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
-            _defaultMapCache[defaultCacheKey] = defaultMap;
-            return ApplyParameters(defaultMap, parameters);
+            return GetOrCreateDefaultMap<TSource, TTarget>(parameters);
         }
 
         if (name == null) {
@@ -69,5 +62,16 @@ public partial class Mapify {
         }
 
         return null;
+    }
+
+    private Expression<Func<TSource, TTarget>> GetOrCreateDefaultMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters) {
+        var defaultCacheKey = new Tuple<Type, Type>(typeof(TSource), typeof(TTarget));
+        if (_defaultMapCache.TryGetValue(defaultCacheKey, out var existingDefaultMap)) {
+            return ApplyParameters((Expression<Func<TSource, TTarget>>)existingDefaultMap, parameters);
+        }
+
+        var defaultMap = CreateMap<TSource, TTarget>(null, null, (sourceType, targetType, requestedMapName) => ResolveExistingMapForBuild(sourceType, targetType, requestedMapName));
+        _defaultMapCache[defaultCacheKey] = defaultMap;
+        return ApplyParameters(defaultMap, parameters);
     }
 }

@@ -3,6 +3,33 @@ using System.Linq.Expressions;
 namespace Mapify.NET;
 
 public partial class Mapify {
+    MapifyMapBuilder<TSource, TTarget> IMapifyConfigurator.CreateMap<TSource, TTarget>(Expression<Func<TSource, TTarget>>? partial) {
+        return AddPendingMap(null, partial);
+    }
+
+    MapifyMapBuilder<TSource, TTarget> IMapifyConfigurator.CreateMap<TSource, TTarget>(string name, Expression<Func<TSource, TTarget>>? partial) {
+        if (string.IsNullOrWhiteSpace(name)) {
+            throw new ArgumentException("Mapping name must not be null or whitespace.", nameof(name));
+        }
+
+        return AddPendingMap(name, partial);
+    }
+
+    private MapifyMapBuilder<TSource, TTarget> AddPendingMap<TSource, TTarget>(string? name, Expression<Func<TSource, TTarget>>? partial) {
+        var key = new MapKey(typeof(TSource), typeof(TTarget), name);
+        if (_pendingRegistrations.ContainsKey(key) || _converters.ContainsKey(key)) {
+            var mappingScope = name == null ? "default" : $"named '{name}'";
+            throw new ArgumentException($"There already exists a {mappingScope} mapping from TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName}). There can only be one mapping per name and source/target combination.");
+        }
+
+        var registration = new PendingMapRegistration(partial);
+        _pendingRegistrations[key] = registration;
+
+        return new MapifyMapBuilder<TSource, TTarget>((targetExpression, sourceExpression) => {
+            registration.AddBinding(targetExpression, sourceExpression);
+        });
+    }
+
     private void BuildRegisteredMaps() {
         var keys = _pendingRegistrations.Keys.ToArray();
         foreach (var key in keys) {
