@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using LinqKit;
 
 namespace Mapify.NET.Tests.EFCore;
 
@@ -46,7 +45,6 @@ public partial class MapifyEfCoreProjectionTests {
         var map = mapify.GetRequiredMap<EfCorePerson, EfCorePersonDto>();
 
         var result = db.People
-            .AsExpandable()
             .OrderBy(x => x.Id)
             .Select(map)
             .ToList();
