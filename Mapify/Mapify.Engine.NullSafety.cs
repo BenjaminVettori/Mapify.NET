@@ -22,6 +22,19 @@ public partial class Mapify {
             return ApplyNestedNullSafetyCore(normalized, fallback);
         }
 
+        if (expression is UnaryExpression unaryExpression
+            && (unaryExpression.NodeType == ExpressionType.Convert || unaryExpression.NodeType == ExpressionType.ConvertChecked)
+            && unaryExpression.Operand is ConditionalExpression) {
+            var operandFallback = AdaptFallbackToType(fallback, unaryExpression.Operand.Type);
+            var guardedOperand = ApplyNestedNullSafetyCore(unaryExpression.Operand, operandFallback);
+
+            if (guardedOperand.Type == unaryExpression.Type) {
+                return guardedOperand;
+            }
+
+            return Expression.MakeUnary(unaryExpression.NodeType, guardedOperand, unaryExpression.Type, unaryExpression.Method);
+        }
+
         if (expression is ConditionalExpression conditionalExpression) {
             var guardedTest = ApplyNestedNullSafetyToBooleanExpression(conditionalExpression.Test);
             var guardedIfTrue = ApplyNestedNullSafetyCore(

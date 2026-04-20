@@ -1378,6 +1378,59 @@ public class MapifyInstanceTests {
         public string Name { get; set; } = string.Empty;
     }
 
+    private enum PolymorphicIndicator {
+        Default = 0,
+        Custom = 1
+    }
+
+    private class PolymorphicIndicatorDetail {
+        public PolymorphicIndicator Indicator { get; set; }
+    }
+
+    private abstract class PolymorphicIndicatorItemSource {
+    }
+
+    private class PolymorphicIndicatorType1Source : PolymorphicIndicatorItemSource {
+    }
+
+    private class PolymorphicIndicatorType2Source : PolymorphicIndicatorItemSource {
+        public PolymorphicIndicatorDetail? Detail { get; set; }
+    }
+
+    private sealed class PolymorphicIndicatorType1ProxySource : PolymorphicIndicatorType1Source {
+    }
+
+    private sealed class PolymorphicIndicatorType2ProxySource : PolymorphicIndicatorType2Source {
+    }
+
+    private class PolymorphicIndicatorTarget {
+        public PolymorphicIndicator? Indicator { get; set; }
+    }
+
+    private abstract class PolymorphicDiscriminatorItemSource {
+        public string Kind { get; set; } = string.Empty;
+    }
+
+    private class PolymorphicDiscriminatorType1Source : PolymorphicDiscriminatorItemSource {
+        public PolymorphicNestedName? Name { get; set; }
+    }
+
+    private class PolymorphicDiscriminatorType2Source : PolymorphicDiscriminatorItemSource {
+        public PolymorphicNestedName? OtherName { get; set; }
+        public PolymorphicIndicatorDetail? Detail { get; set; }
+    }
+
+    private sealed class PolymorphicDiscriminatorType1ProxySource : PolymorphicDiscriminatorType1Source {
+    }
+
+    private sealed class PolymorphicDiscriminatorType2ProxySource : PolymorphicDiscriminatorType2Source {
+    }
+
+    private class PolymorphicDiscriminatorTarget {
+        public string Name { get; set; } = string.Empty;
+        public PolymorphicIndicator? Indicator { get; set; }
+    }
+
     private class PolymorphicNestedSiblingCastProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<PolymorphicNestedItemSource, PolymorphicNestedTarget>(x => new PolymorphicNestedTarget {
@@ -1386,6 +1439,31 @@ public class MapifyInstanceTests {
                     : x is PolymorphicNestedType2Source
                         ? ((PolymorphicNestedType2Source)x).OtherName!.Value
                         : string.Empty
+            });
+        }
+    }
+
+    private class PolymorphicIndicatorSiblingCastProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<PolymorphicIndicatorItemSource, PolymorphicIndicatorTarget>(x => new PolymorphicIndicatorTarget {
+                Indicator = x is PolymorphicIndicatorType2Source
+                    ? ((PolymorphicIndicatorType2Source)x).Detail!.Indicator
+                    : PolymorphicIndicator.Default
+            });
+        }
+    }
+
+    private class PolymorphicDiscriminatorSiblingCastProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<PolymorphicDiscriminatorItemSource, PolymorphicDiscriminatorTarget>(x => new PolymorphicDiscriminatorTarget {
+                Name = x.Kind == "Type1"
+                    ? ((PolymorphicDiscriminatorType1Source)x).Name!.Value
+                    : x.Kind == "Type2"
+                        ? ((PolymorphicDiscriminatorType2Source)x).OtherName!.Value
+                        : string.Empty,
+                Indicator = x.Kind == "Type2"
+                    ? ((PolymorphicDiscriminatorType2Source)x).Detail!.Indicator
+                    : PolymorphicIndicator.Default
             });
         }
     }
@@ -2131,6 +2209,42 @@ public class MapifyInstanceTests {
 
         Assert.Equal("A", mapped1.Name);
         Assert.Equal("B", mapped2.Name);
+    }
+
+    [Fact]
+    public void Map_ShouldNotEvaluateSiblingCast_ForConvertWrappedConditional_OnProxyType() {
+        var mapify = new Mapify(new PolymorphicIndicatorSiblingCastProfile());
+
+        var mapped = mapify.Map<PolymorphicIndicatorItemSource, PolymorphicIndicatorTarget>(
+            new PolymorphicIndicatorType1ProxySource()
+        );
+
+        Assert.Equal(PolymorphicIndicator.Default, mapped.Indicator);
+    }
+
+    [Fact]
+    public void Map_ShouldHandleProxyLikePolymorphicSiblings_WithStringDiscriminatorGuards() {
+        var mapify = new Mapify(new PolymorphicDiscriminatorSiblingCastProfile());
+
+        var mapped1 = mapify.Map<PolymorphicDiscriminatorItemSource, PolymorphicDiscriminatorTarget>(
+            new PolymorphicDiscriminatorType1ProxySource {
+                Kind = "Type1",
+                Name = new PolymorphicNestedName { Value = "A" }
+            }
+        );
+
+        var mapped2 = mapify.Map<PolymorphicDiscriminatorItemSource, PolymorphicDiscriminatorTarget>(
+            new PolymorphicDiscriminatorType2ProxySource {
+                Kind = "Type2",
+                OtherName = new PolymorphicNestedName { Value = "B" },
+                Detail = new PolymorphicIndicatorDetail { Indicator = PolymorphicIndicator.Custom }
+            }
+        );
+
+        Assert.Equal("A", mapped1.Name);
+        Assert.Equal(PolymorphicIndicator.Default, mapped1.Indicator);
+        Assert.Equal("B", mapped2.Name);
+        Assert.Equal(PolymorphicIndicator.Custom, mapped2.Indicator);
     }
 
     [Fact]
