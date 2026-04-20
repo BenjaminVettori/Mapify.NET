@@ -129,10 +129,16 @@ public partial class Mapify {
 
         var key = new MapKey(typeof(TSource), typeof(TTarget), name);
         if (_compiledMapToNewCache.TryGetValue(key, out var map)) {
+            if (IsRuntimeExpressionDebugEnabled()) {
+                var debugExpression = GetRequiredRuntimeMap<TSource, TTarget>(name, _emptyParameters);
+                LogRuntimeExpression(name, debugExpression, fromCache: true);
+            }
+
             return ((Func<TSource, TTarget>)map).Invoke(source);
         }
 
         var expression = GetRequiredRuntimeMap<TSource, TTarget>(name, _emptyParameters);
+        LogRuntimeExpression(name, expression, fromCache: false);
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);
@@ -156,6 +162,7 @@ public partial class Mapify {
         ValidateRuntimeParameters(parameters);
 
         var expression = GetRequiredRuntimeMap<TSource, TTarget>(name, parameters);
+        LogRuntimeExpression(name, expression, fromCache: false);
         var compiled = expression.Compile();
         return compiled.Invoke(source);
     }
@@ -171,10 +178,16 @@ public partial class Mapify {
     public TTarget Map<TSource, TTarget>(TSource source) {
         var key = new MapKey(typeof(TSource), typeof(TTarget), null);
         if (_compiledMapToNewCache.TryGetValue(key, out var map)) {
+            if (IsRuntimeExpressionDebugEnabled()) {
+                var debugExpression = GetRequiredRuntimeMap<TSource, TTarget>(null, _emptyParameters);
+                LogRuntimeExpression(null, debugExpression, fromCache: true);
+            }
+
             return ((Func<TSource, TTarget>)map).Invoke(source);
         }
 
         var expression = GetRequiredRuntimeMap<TSource, TTarget>(null, _emptyParameters);
+        LogRuntimeExpression(null, expression, fromCache: false);
         var compiled = expression.Compile();
         _compiledMapToNewCache[key] = compiled;
         return compiled.Invoke(source);
@@ -193,6 +206,7 @@ public partial class Mapify {
         ValidateRuntimeParameters(parameters);
 
         var expression = GetRequiredRuntimeMap<TSource, TTarget>(null, parameters);
+        LogRuntimeExpression(null, expression, fromCache: false);
         var compiled = expression.Compile();
         return compiled.Invoke(source);
     }

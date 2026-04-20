@@ -338,4 +338,44 @@ public partial class MapifyEfCoreProjectionTests {
         Assert.All(items, item => Assert.NotNull(item));
         Assert.All(items, item => Assert.True(item.Price > 0));
     }
+
+    [Fact]
+    public void InstanceMapify_Map_ShouldHandleLazyLoadedProxyPolymorphicChildren_WithSiblingCastProfileShape() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseLazyLoadingProxies()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using (var seed = new EfCoreMapifyContext(options)) {
+            seed.BillsWithVirtualListBlocks.Add(new EfCoreBillWithVirtualListBlocks {
+                Blocks = [
+                    new EfCoreVirtualListBlock {
+                        CostItems = [
+                            new EfCoreVirtualListCostItemType1 { Price = 10m },
+                            new EfCoreVirtualListCostItemType2 { TotalPrice = 25m }
+                        ]
+                    }
+                ]
+            });
+
+            seed.SaveChanges();
+        }
+
+        using var db = new EfCoreMapifyContext(options);
+
+        var loaded = db.BillsWithVirtualListBlocks.Single();
+
+        var mapify = new Mapify([
+            new EfCoreVirtualListCostItemProfile(),
+            new EfCoreVirtualListBlockProfile(),
+            new EfCoreVirtualListBillProfile()
+        ]);
+
+        var mapped = mapify.Map<EfCoreBillWithVirtualListBlocks, EfCoreBillWithVirtualListBlocksDto>(loaded);
+
+        var items = mapped.Blocks.Single().CostItems.ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.All(items, item => Assert.NotNull(item));
+        Assert.Equal(new[] { 10m, 25m }, items.Select(x => x.Price).OrderBy(x => x).ToArray());
+    }
 }
