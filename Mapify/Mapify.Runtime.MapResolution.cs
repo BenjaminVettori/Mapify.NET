@@ -61,7 +61,42 @@ public partial class Mapify {
             return ApplyParameters(existingConverter, parameters);
         }
 
+        if (_runtimeSourceBaseFallbackCache.TryGetValue(key, out var cachedFallbackKey)
+            && _converters.TryGetValue(cachedFallbackKey, out var cachedFallbackConverter)) {
+            return ApplyParameters(cachedFallbackConverter, parameters);
+        }
+
+        if (_runtimeSourceBaseFallbackMissCache.Contains(key)) {
+            return null;
+        }
+
+        if (TryResolveRuntimeCandidateFromSourceBaseTypes(sourceType, targetType, name, out var fallbackKey)
+            && _converters.TryGetValue(fallbackKey, out var fallbackConverter)) {
+            _runtimeSourceBaseFallbackCache[key] = fallbackKey;
+            _runtimeSourceBaseFallbackMissCache.Remove(key);
+            return ApplyParameters(fallbackConverter, parameters);
+        }
+
+        _runtimeSourceBaseFallbackCache.Remove(key);
+        _runtimeSourceBaseFallbackMissCache.Add(key);
+
         return null;
+    }
+
+    private bool TryResolveRuntimeCandidateFromSourceBaseTypes(Type sourceType, Type targetType, string? name, out MapKey fallbackKey) {
+        var currentBaseType = sourceType.BaseType;
+        while (currentBaseType != null) {
+            var candidateKey = new MapKey(currentBaseType, targetType, name);
+            if (_converters.ContainsKey(candidateKey)) {
+                fallbackKey = candidateKey;
+                return true;
+            }
+
+            currentBaseType = currentBaseType.BaseType;
+        }
+
+        fallbackKey = default;
+        return false;
     }
 
     private Expression<Func<TSource, TTarget>> GetOrCreateDefaultMap<TSource, TTarget>(IReadOnlyDictionary<string, object?> parameters) {

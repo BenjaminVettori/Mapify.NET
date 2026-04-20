@@ -13,6 +13,7 @@ public interface IMapify {
 
     /// <summary>
     /// Gets the default map expression for the source and target types.
+    /// If an exact source type map is missing, a map registered for a base source type may be used.
     /// Returns <c>null</c> when no map exists and default-map fallback is disabled.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
@@ -22,6 +23,7 @@ public interface IMapify {
 
     /// <summary>
     /// Gets the default map expression for the source and target types and replaces runtime parameters.
+    /// If an exact source type map is missing, a map registered for a base source type may be used.
     /// Returns <c>null</c> when no map exists and default-map fallback is disabled.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
@@ -51,6 +53,7 @@ public interface IMapify {
 
     /// <summary>
     /// Gets the named map expression for the source and target types.
+    /// If an exact source type map is missing, a named map registered for a base source type may be used.
     /// Returns <c>null</c> when the named map is missing.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>
@@ -62,6 +65,7 @@ public interface IMapify {
 
     /// <summary>
     /// Gets the named map expression for the source and target types and replaces runtime parameters.
+    /// If an exact source type map is missing, a named map registered for a base source type may be used.
     /// Returns <c>null</c> when the named map is missing.
     /// </summary>
     /// <typeparam name="TSource">The source type.</typeparam>

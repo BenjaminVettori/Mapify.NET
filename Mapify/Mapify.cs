@@ -20,6 +20,10 @@ public partial class Mapify : IMapify, IMapifyConfigurator {
 
     private readonly Dictionary<MapKey, LambdaExpression> _converters = [];
 
+    private readonly Dictionary<MapKey, MapKey> _runtimeSourceBaseFallbackCache = [];
+
+    private readonly HashSet<MapKey> _runtimeSourceBaseFallbackMissCache = [];
+
     private readonly Dictionary<Tuple<Type, Type>, LambdaExpression> _defaultMapCache = [];
 
     private readonly Dictionary<MapKey, Delegate> _compiledMapToExistingCache = [];

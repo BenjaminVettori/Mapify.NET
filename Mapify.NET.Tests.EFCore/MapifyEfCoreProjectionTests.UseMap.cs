@@ -288,4 +288,54 @@ public partial class MapifyEfCoreProjectionTests {
         Assert.Equal(2, result.Count);
         Assert.Equal(new[] { 101, 102 }, result.Select(x => x.AdjustedId).ToArray());
     }
+
+    [Fact]
+    public void InstanceMapify_Map_ShouldFallbackToBaseMap_ForProxyLikeVirtualListsLoadedInMemory() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseLazyLoadingProxies()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using (var seed = new EfCoreMapifyContext(options)) {
+            seed.BillsWithVirtualListBlocks.Add(new EfCoreBillWithVirtualListBlocks {
+                Blocks = [
+                    new EfCoreVirtualListBlock {
+                        CostItems = [
+                            new EfCoreVirtualListCostItemType1 { Price = 10m },
+                            new EfCoreVirtualListCostItemType2 { TotalPrice = 25m }
+                        ]
+                    }
+                ]
+            });
+
+            seed.SaveChanges();
+        }
+
+        using var db = new EfCoreMapifyContext(options);
+
+        var loaded = db.BillsWithVirtualListBlocks.Single();
+
+        var blocks = loaded.Blocks!;
+        var costItems = blocks.Single().CostItems!;
+
+        Assert.NotEqual(typeof(EfCoreBillWithVirtualListBlocks), loaded.GetType());
+        Assert.NotEqual(typeof(EfCoreVirtualListBlock), blocks.Single().GetType());
+        Assert.All(costItems, item => {
+            Assert.NotEqual(typeof(EfCoreVirtualListCostItemType1), item.GetType());
+            Assert.NotEqual(typeof(EfCoreVirtualListCostItemType2), item.GetType());
+        });
+
+        var mapify = new Mapify([
+            new EfCoreVirtualListCostItemBaseOnlyProfile(),
+            new EfCoreVirtualListBlockProfile(),
+            new EfCoreVirtualListBillProfile()
+        ]);
+
+        var mapped = mapify.Map<EfCoreBillWithVirtualListBlocks, EfCoreBillWithVirtualListBlocksDto>(loaded);
+
+        var items = mapped.Blocks.Single().CostItems.ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.All(items, item => Assert.NotNull(item));
+        Assert.All(items, item => Assert.True(item.Price > 0));
+    }
 }

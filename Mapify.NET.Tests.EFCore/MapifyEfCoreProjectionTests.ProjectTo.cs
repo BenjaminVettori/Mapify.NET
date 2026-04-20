@@ -87,6 +87,42 @@ public partial class MapifyEfCoreProjectionTests {
     }
 
     [Fact]
+    public void InstanceMapify_ProjectTo_ShouldFallbackToBaseMap_ForDerivedRuntimeElementTypes() {
+        var mapify = new Mapify([
+            new EfCoreProxyLikeBaseProfile()
+        ]);
+
+        IQueryable source = new List<EfCoreProxyLikeDerivedSource> {
+            new EfCoreProxyLikeDerivedSource { Value = 1 },
+            new EfCoreProxyLikeDerivedSource { Value = 2 }
+        }.AsQueryable();
+
+        var projected = source
+            .ProjectTo<EfCoreProxyLikeDto>(mapify)
+            .ToList();
+
+        Assert.Equal(new[] { 2, 3 }, projected.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectToNamed_ShouldFallbackToNamedBaseMap_ForDerivedRuntimeElementTypes() {
+        var mapify = new Mapify([
+            new EfCoreProxyLikeNamedBaseProfile()
+        ]);
+
+        IQueryable source = new List<EfCoreProxyLikeDerivedSource> {
+            new EfCoreProxyLikeDerivedSource { Value = 1 },
+            new EfCoreProxyLikeDerivedSource { Value = 2 }
+        }.AsQueryable();
+
+        var projected = source
+            .ProjectTo<EfCoreProxyLikeDto>(mapify, "Offset")
+            .ToList();
+
+        Assert.Equal(new[] { 11, 12 }, projected.Select(x => x.Value).ToArray());
+    }
+
+    [Fact]
     public void InstanceMapify_ProjectTo_ShouldMapPolymorphicItems_WhenConditionalCollectionBranchIsUsed() {
         var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))

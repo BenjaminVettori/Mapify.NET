@@ -29,6 +29,7 @@ public partial class Mapify {
         var expression = (Expression<Func<TSource, TTarget>>)mappingExpression;
 
         _converters[key] = expression;
+        ClearRuntimeSourceBaseFallbackCaches();
 
         if (!compileCaches) {
             _compiledMapToExistingCache.Remove(key);
@@ -47,7 +48,13 @@ public partial class Mapify {
         }
 
         _converters[key] = mappingExpression;
+        ClearRuntimeSourceBaseFallbackCaches();
         UpdateCompiledMapCaches(key, mappingExpression, clearExisting: false);
+    }
+
+    private void ClearRuntimeSourceBaseFallbackCaches() {
+        _runtimeSourceBaseFallbackCache.Clear();
+        _runtimeSourceBaseFallbackMissCache.Clear();
     }
 
     private void UpdateCompiledMapCaches<TSource, TTarget>(

@@ -38,6 +38,11 @@ public partial class Mapify {
             return ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
         }
 
+        var runtimeCandidate = ResolveRuntimeMapCandidate(typeof(TSource), typeof(TTarget), name, parameters);
+        if (runtimeCandidate != null) {
+            return CreateTypedMapExpression<TSource, TTarget>(runtimeCandidate);
+        }
+
         return null;
     }
 
@@ -98,6 +103,11 @@ public partial class Mapify {
             return ApplyParameters((Expression<Func<TSource, TTarget>>)existingConverter, parameters);
         }
 
+        var runtimeCandidate = ResolveRuntimeMapCandidate(typeof(TSource), typeof(TTarget), null, parameters);
+        if (runtimeCandidate != null) {
+            return CreateTypedMapExpression<TSource, TTarget>(runtimeCandidate);
+        }
+
         if (_useDefaultMapIfTypeMapIsMissing) {
             return GetOrCreateDefaultMap<TSource, TTarget>(parameters);
         }
@@ -131,5 +141,22 @@ public partial class Mapify {
         }
 
         throw new ArgumentException($"Missing type map configuration for TSource ({typeof(TSource).FullName}) to TTarget ({typeof(TTarget).FullName})");
+    }
+
+    private static Expression<Func<TSource, TTarget>> CreateTypedMapExpression<TSource, TTarget>(LambdaExpression runtimeMapExpression) {
+        if (runtimeMapExpression is Expression<Func<TSource, TTarget>> typedExpression) {
+            return typedExpression;
+        }
+
+        var sourceParameter = Expression.Parameter(typeof(TSource), "x");
+        Expression runtimeSource = sourceParameter;
+        var runtimeSourceType = runtimeMapExpression.Parameters[0].Type;
+
+        if (runtimeSourceType != typeof(TSource)) {
+            runtimeSource = Expression.Convert(sourceParameter, runtimeSourceType);
+        }
+
+        var body = new ParameterReplaceVisitor(runtimeMapExpression.Parameters[0], runtimeSource).Visit(runtimeMapExpression.Body)!;
+        return Expression.Lambda<Func<TSource, TTarget>>(body, sourceParameter);
     }
 }

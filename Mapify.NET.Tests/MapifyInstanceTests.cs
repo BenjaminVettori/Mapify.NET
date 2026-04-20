@@ -214,6 +214,10 @@ public class MapifyInstanceTests {
         public int Count { get; set; }
     }
 
+    private class DerivedListSummaryTarget {
+        public int Count { get; set; }
+    }
+
     private class CollectionUseMapSource {
         public ElementSource[] ItemsArray { get; set; } = [];
         public List<ElementSource> ItemsList { get; set; } = [];
@@ -229,6 +233,9 @@ public class MapifyInstanceTests {
 
     private class CollectionContainerSource {
         public List<ElementSource> Items { get; set; } = [];
+    }
+
+    private class DerivedElementSourceList : List<ElementSource> {
     }
 
     private class CollectionContainerTarget {
@@ -909,6 +916,26 @@ public class MapifyInstanceTests {
         protected override void Configure() {
             CreateMap<List<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
                 Count = x.Count() + 10
+            });
+        }
+    }
+
+    private class NamedCollectionSummaryListProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<List<ElementSource>, CollectionSummaryTarget>("ListNamed", x => new CollectionSummaryTarget {
+                Count = x.Count() + 17
+            });
+        }
+    }
+
+    private class BaseAndDerivedListSummaryProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<List<ElementSource>, DerivedListSummaryTarget>(x => new DerivedListSummaryTarget {
+                Count = x.Count() + 100
+            });
+
+            CreateMap<DerivedElementSourceList, DerivedListSummaryTarget>(x => new DerivedListSummaryTarget {
+                Count = x.Count() + 1000
             });
         }
     }
@@ -2261,6 +2288,80 @@ public class MapifyInstanceTests {
         Assert.Null(collectionMap);
         Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<NumberSource?, NumberTarget?>());
         Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<List<ElementSource>, List<ElementTarget>>());
+    }
+
+    [Fact]
+    public void Map_ShouldFallbackToBaseSourceMap_WhenDerivedSourceMapIsMissing() {
+        var mapify = new Mapify(new CollectionSummaryListProfile());
+
+        var source = new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        };
+
+        var mapped = mapify.Map<DerivedElementSourceList, CollectionSummaryTarget>(source);
+
+        Assert.Equal(13, mapped.Count);
+    }
+
+    [Fact]
+    public void Map_Named_ShouldFallbackToBaseSourceMap_WhenDerivedSourceNamedMapIsMissing() {
+        var mapify = new Mapify(new NamedCollectionSummaryListProfile());
+
+        var source = new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        };
+
+        var mapped = mapify.Map<DerivedElementSourceList, CollectionSummaryTarget>(source, "ListNamed");
+
+        Assert.Equal(20, mapped.Count);
+    }
+
+    [Fact]
+    public void GetMap_ShouldFallbackToBaseSourceMap_WhenDerivedSourceMapIsMissing() {
+        var mapify = new Mapify(new CollectionSummaryListProfile());
+
+        var map = mapify.GetMap<DerivedElementSourceList, CollectionSummaryTarget>();
+
+        Assert.NotNull(map);
+        var mapped = map.Compile().Invoke(new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        });
+        Assert.Equal(13, mapped.Count);
+    }
+
+    [Fact]
+    public void GetRequiredMap_Named_ShouldFallbackToBaseSourceMap_WhenDerivedSourceNamedMapIsMissing() {
+        var mapify = new Mapify(new NamedCollectionSummaryListProfile());
+
+        var map = mapify.GetRequiredMap<DerivedElementSourceList, CollectionSummaryTarget>("ListNamed");
+
+        var mapped = map.Compile().Invoke(new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        });
+        Assert.Equal(20, mapped.Count);
+    }
+
+    [Fact]
+    public void Map_ShouldPreferExactDerivedSourceMap_OverBaseSourceFallback() {
+        var mapify = new Mapify(new BaseAndDerivedListSummaryProfile());
+
+        var source = new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        };
+
+        var mapped = mapify.Map<DerivedElementSourceList, DerivedListSummaryTarget>(source);
+
+        Assert.Equal(1003, mapped.Count);
     }
 
     [Fact]

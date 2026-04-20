@@ -278,6 +278,30 @@ public partial class MapifyEfCoreProjectionTests {
         }
     }
 
+    private sealed class EfCoreProxyLikeBaseProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreProxyLikeBaseSource, EfCoreProxyLikeDto>(x => new EfCoreProxyLikeDto {
+                Value = x.Value + 1
+            });
+        }
+    }
+
+    private sealed class EfCoreProxyLikeNamedBaseProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreProxyLikeBaseSource, EfCoreProxyLikeDto>("Offset", x => new EfCoreProxyLikeDto {
+                Value = x.Value + 10
+            });
+        }
+    }
+
+    private sealed class EfCoreVirtualListCostItemBaseOnlyProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreVirtualListCostItem, EfCoreCostItemDto>(x => new EfCoreCostItemDto {
+                Price = x.Id
+            });
+        }
+    }
+
     private sealed class EfCoreRecursiveNodeDefaultDepthProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCoreRecursiveNode, EfCoreRecursiveNodeDto>(x => new EfCoreRecursiveNodeDto {
