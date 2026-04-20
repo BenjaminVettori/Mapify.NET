@@ -116,7 +116,13 @@ public partial class Mapify {
 
     private sealed class LambdaBodyNullSafetyRewriter : ExpressionVisitor {
         protected override Expression VisitLambda<T>(Expression<T> node) {
-            var guardedBody = ApplyNestedNullSafetyCore(node.Body, CreateDefaultValueExpression(node.Body.Type));
+            var visitedBody = Visit(node.Body)!;
+
+            if (!node.ReturnType.IsValueType && (visitedBody is MemberInitExpression || visitedBody is NewExpression)) {
+                return Expression.Lambda<T>(visitedBody, node.Parameters);
+            }
+
+            var guardedBody = ApplyNestedNullSafetyCore(visitedBody, CreateDefaultValueExpression(visitedBody.Type));
             return Expression.Lambda<T>(guardedBody, node.Parameters);
         }
     }

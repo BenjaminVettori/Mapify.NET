@@ -1,5 +1,7 @@
 namespace Mapify.NET.Tests.EFCore;
 
+using System.Linq;
+
 public partial class MapifyEfCoreProjectionTests {
     private sealed class EfCorePhoneProfile : MapifyProfile {
         protected override void Configure() {
@@ -37,6 +39,106 @@ public partial class MapifyEfCoreProjectionTests {
         protected override void Configure() {
             CreateMap<EfCoreBill, EfCoreBillDto>(b => new EfCoreBillDto {
                 CostItems = b.CostItems!.ProjectTo<EfCoreCostItemDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreBlockCostItemProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBlockCostItem, EfCoreCostItemDto>(ci => new EfCoreCostItemDto {
+                Price = ci is EfCoreBlockCostItemType1
+                    ? ((EfCoreBlockCostItemType1)ci).Price
+                    : ((EfCoreBlockCostItemType2)ci).TotalPrice
+            });
+        }
+    }
+
+    private sealed class EfCoreBlockProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBlock, EfCoreBlockDto>(b => new EfCoreBlockDto {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<EfCoreCostItemDto>()
+                    : new List<EfCoreCostItemDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreBillWithBlocksProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBillWithBlocks, EfCoreBillWithBlocksDto>(b => new EfCoreBillWithBlocksDto {
+                Blocks = b.Blocks != null
+                    ? b.Blocks.ProjectTo<EfCoreBlockDto>()
+                    : new List<EfCoreBlockDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreBlockConditionalRelationalProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBlock, EfCoreBlockDto>(b => new EfCoreBlockDto {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<EfCoreCostItemDto>()
+                    : Enumerable.Empty<EfCoreCostItemDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreBillWithBlocksConditionalRelationalProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBillWithBlocks, EfCoreBillWithBlocksDto>(b => new EfCoreBillWithBlocksDto {
+                Blocks = b.Blocks != null
+                    ? b.Blocks.ProjectTo<EfCoreBlockDto>()
+                    : Enumerable.Empty<EfCoreBlockDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreVirtualListCostItemProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreVirtualListCostItem, EfCoreCostItemDto>(ci => new EfCoreCostItemDto {
+                Price = ci is EfCoreVirtualListCostItemType1
+                    ? ((EfCoreVirtualListCostItemType1)ci).Price
+                    : ((EfCoreVirtualListCostItemType2)ci).TotalPrice
+            });
+        }
+    }
+
+    private sealed class EfCoreVirtualListBlockProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreVirtualListBlock, EfCoreVirtualListBlockDto>(b => new EfCoreVirtualListBlockDto {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<EfCoreCostItemDto>()
+                    : Enumerable.Empty<EfCoreCostItemDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreVirtualListBillProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBillWithVirtualListBlocks, EfCoreBillWithVirtualListBlocksDto>(b => new EfCoreBillWithVirtualListBlocksDto {
+                Blocks = b.Blocks != null
+                    ? b.Blocks.ProjectTo<EfCoreVirtualListBlockDto>()
+                    : Enumerable.Empty<EfCoreVirtualListBlockDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreVirtualListBlockExactUserShapeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreVirtualListBlock, EfCoreVirtualListBlockDto>(b => new EfCoreVirtualListBlockDto {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<EfCoreCostItemDto>().ToList()
+                    : new List<EfCoreCostItemDto>()
+            });
+        }
+    }
+
+    private sealed class EfCoreVirtualListBillExactUserShapeProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBillWithVirtualListBlocks, EfCoreBillWithVirtualListBlocksDto>(a => new EfCoreBillWithVirtualListBlocksDto {
+                Blocks = a.Blocks != null
+                    ? a.Blocks.ProjectTo<EfCoreVirtualListBlockDto>().ToList()
+                    : new List<EfCoreVirtualListBlockDto>()
             });
         }
     }

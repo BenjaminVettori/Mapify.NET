@@ -149,6 +149,223 @@ public partial class MapifyEfCoreProjectionTests {
     }
 
     [Fact]
+    public void InstanceMapify_ProjectTo_ShouldMapNestedPolymorphicItems_WithoutNullEntries() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.BillsWithBlocks.Add(new EfCoreBillWithBlocks {
+            Blocks = [
+                new EfCoreBlock {
+                    CostItems = [
+                        new EfCoreBlockCostItemType1 { Price = 1m },
+                        new EfCoreBlockCostItemType2 { TotalPrice = 2m },
+                        new EfCoreBlockCostItemType1 { Price = 3m },
+                        new EfCoreBlockCostItemType2 { TotalPrice = 4m },
+                        new EfCoreBlockCostItemType1 { Price = 5m }
+                    ]
+                }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreBlockCostItemProfile(),
+            new EfCoreBlockProfile(),
+            new EfCoreBillWithBlocksProfile()
+        ]);
+
+        var projected = db.BillsWithBlocks
+            .ProjectTo<EfCoreBillWithBlocksDto>(mapify)
+            .Single();
+
+        var block = projected.Blocks.Single();
+        var costItems = block.CostItems.ToArray();
+
+        Assert.Equal(5, costItems.Length);
+        Assert.All(costItems, item => Assert.NotNull(item));
+        Assert.Equal(new[] { 1m, 2m, 3m, 4m, 5m }, costItems.Select(x => x.Price).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldNotProduceNullCostItems_WhenSiblingBlockHasNullCollection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.BillsWithBlocks.Add(new EfCoreBillWithBlocks {
+            Blocks = [
+                new EfCoreBlock {
+                    CostItems = null
+                },
+                new EfCoreBlock {
+                    CostItems = [
+                        new EfCoreBlockCostItemType1 { Price = 1m },
+                        new EfCoreBlockCostItemType2 { TotalPrice = 2m },
+                        new EfCoreBlockCostItemType1 { Price = 3m },
+                        new EfCoreBlockCostItemType2 { TotalPrice = 4m },
+                        new EfCoreBlockCostItemType1 { Price = 5m }
+                    ]
+                }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreBlockCostItemProfile(),
+            new EfCoreBlockProfile(),
+            new EfCoreBillWithBlocksProfile()
+        ]);
+
+        var projected = db.BillsWithBlocks
+            .ProjectTo<EfCoreBillWithBlocksDto>(mapify)
+            .Single();
+
+        var blocks = projected.Blocks.ToArray();
+        Assert.Equal(2, blocks.Length);
+
+        var nonEmptyBlock = blocks.Single(b => b.CostItems.Any());
+        var costItems = nonEmptyBlock.CostItems.ToArray();
+
+        Assert.Equal(5, costItems.Length);
+        Assert.All(costItems, item => Assert.NotNull(item));
+        Assert.Equal(new[] { 1m, 2m, 3m, 4m, 5m }, costItems.Select(x => x.Price).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldNotProduceNullCostItems_ForNestedPolymorphicSqliteConditionalProjection() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+
+        db.BillsWithBlocks.Add(new EfCoreBillWithBlocks {
+            Blocks = [
+                new EfCoreBlock {
+                    CostItems = [
+                        new EfCoreBlockCostItemType1 { Price = 1m },
+                        new EfCoreBlockCostItemType2 { TotalPrice = 2m },
+                        new EfCoreBlockCostItemType1 { Price = 3m },
+                        new EfCoreBlockCostItemType2 { TotalPrice = 4m },
+                        new EfCoreBlockCostItemType1 { Price = 5m }
+                    ]
+                }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreBlockCostItemProfile(),
+            new EfCoreBlockConditionalRelationalProfile(),
+            new EfCoreBillWithBlocksConditionalRelationalProfile()
+        ]);
+
+        var projected = db.BillsWithBlocks
+            .ProjectTo<EfCoreBillWithBlocksDto>(mapify)
+            .Single();
+
+        var costItems = projected.Blocks.Single().CostItems.ToArray();
+
+        Assert.Equal(5, costItems.Length);
+        Assert.All(costItems, item => Assert.NotNull(item));
+        Assert.Equal(new[] { 1m, 2m, 3m, 4m, 5m }, costItems.Select(x => x.Price).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldMapVirtualListSource_ToIEnumerableTarget_WithoutNullItems() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.BillsWithVirtualListBlocks.Add(new EfCoreBillWithVirtualListBlocks {
+            Blocks = [
+                new EfCoreVirtualListBlock {
+                    CostItems = [
+                        new EfCoreVirtualListCostItemType1 { Price = 10m },
+                        new EfCoreVirtualListCostItemType2 { TotalPrice = 25m },
+                        new EfCoreVirtualListCostItemType1 { Price = 30m },
+                        new EfCoreVirtualListCostItemType2 { TotalPrice = 45m },
+                        new EfCoreVirtualListCostItemType1 { Price = 50m }
+                    ]
+                }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreVirtualListCostItemProfile(),
+            new EfCoreVirtualListBlockProfile(),
+            new EfCoreVirtualListBillProfile()
+        ]);
+
+        var projected = db.BillsWithVirtualListBlocks
+            .ProjectTo<EfCoreBillWithVirtualListBlocksDto>(mapify)
+            .Single();
+
+        var items = projected.Blocks.Single().CostItems.ToArray();
+
+        Assert.Equal(5, items.Length);
+        Assert.All(items, item => Assert.NotNull(item));
+        Assert.Equal(new[] { 10m, 25m, 30m, 45m, 50m }, items.Select(x => x.Price).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldNotProduceNullItems_ForExactVirtualListToIEnumerableUserShape() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        var bill = new EfCoreBillWithVirtualListBlocks {
+            Blocks = [
+                new EfCoreVirtualListBlock {
+                    CostItems = [
+                        new EfCoreVirtualListCostItemType1 { Price = 10m },
+                        new EfCoreVirtualListCostItemType2 { TotalPrice = 25m },
+                        new EfCoreVirtualListCostItemType1 { Price = 30m },
+                        new EfCoreVirtualListCostItemType2 { TotalPrice = 45m },
+                        new EfCoreVirtualListCostItemType1 { Price = 50m }
+                    ]
+                }
+            ]
+        };
+
+        db.BillsWithVirtualListBlocks.Add(bill);
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreVirtualListCostItemProfile(),
+            new EfCoreVirtualListBlockExactUserShapeProfile(),
+            new EfCoreVirtualListBillExactUserShapeProfile()
+        ]);
+
+        var projected = db.BillsWithVirtualListBlocks
+            .Where(x => x.Id == bill.Id)
+            .ProjectTo<EfCoreBillWithVirtualListBlocksDto>(mapify)
+            .Single();
+
+        var items = projected.Blocks.Single().CostItems.ToArray();
+
+        Assert.Equal(5, items.Length);
+        Assert.All(items, item => Assert.NotNull(item));
+        Assert.Equal(new[] { 10m, 25m, 30m, 45m, 50m }, items.Select(x => x.Price).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
     public void InstanceMapify_ProjectToWithParameters_ShouldWorkInEfCoreProjection() {
         var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
             .UseSqlite("Data Source=:memory:")

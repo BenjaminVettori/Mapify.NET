@@ -103,7 +103,7 @@ public partial class Mapify {
             }
         }
 
-        if (itemNullCheck != null) {
+        if (itemNullCheck != null && destinationElementType.IsValueType) {
             adaptedItemResult = Expression.Condition(
                 itemNullCheck,
                 adaptedItemResult,

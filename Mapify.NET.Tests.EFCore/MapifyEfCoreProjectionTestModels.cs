@@ -12,6 +12,16 @@ public partial class MapifyEfCoreProjectionTests {
         public DbSet<EfCoreCostItem> CostItems => Set<EfCoreCostItem>();
         public DbSet<EfCoreCostItemType1> CostItemsType1 => Set<EfCoreCostItemType1>();
         public DbSet<EfCoreCostItemType2> CostItemsType2 => Set<EfCoreCostItemType2>();
+        public DbSet<EfCoreBillWithBlocks> BillsWithBlocks => Set<EfCoreBillWithBlocks>();
+        public DbSet<EfCoreBlock> Blocks => Set<EfCoreBlock>();
+        public DbSet<EfCoreBlockCostItem> BlockCostItems => Set<EfCoreBlockCostItem>();
+        public DbSet<EfCoreBlockCostItemType1> BlockCostItemsType1 => Set<EfCoreBlockCostItemType1>();
+        public DbSet<EfCoreBlockCostItemType2> BlockCostItemsType2 => Set<EfCoreBlockCostItemType2>();
+        public DbSet<EfCoreBillWithVirtualListBlocks> BillsWithVirtualListBlocks => Set<EfCoreBillWithVirtualListBlocks>();
+        public DbSet<EfCoreVirtualListBlock> VirtualListBlocks => Set<EfCoreVirtualListBlock>();
+        public DbSet<EfCoreVirtualListCostItem> VirtualListCostItems => Set<EfCoreVirtualListCostItem>();
+        public DbSet<EfCoreVirtualListCostItemType1> VirtualListCostItemsType1 => Set<EfCoreVirtualListCostItemType1>();
+        public DbSet<EfCoreVirtualListCostItemType2> VirtualListCostItemsType2 => Set<EfCoreVirtualListCostItemType2>();
         public DbSet<EfCoreRecursiveNode> RecursiveNodes => Set<EfCoreRecursiveNode>();
         public DbSet<EfCoreProjectionIgnoreEntity> ProjectionIgnoreEntities => Set<EfCoreProjectionIgnoreEntity>();
     }
@@ -102,6 +112,74 @@ public partial class MapifyEfCoreProjectionTests {
 
     private sealed class EfCoreBillDto {
         public IEnumerable<EfCoreCostItemDto> CostItems { get; set; } = [];
+    }
+
+    private sealed class EfCoreBillWithBlocks {
+        public int Id { get; set; }
+        public ICollection<EfCoreBlock>? Blocks { get; set; }
+    }
+
+    private sealed class EfCoreBlock {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public EfCoreBillWithBlocks Bill { get; set; } = null!;
+        public ICollection<EfCoreBlockCostItem>? CostItems { get; set; }
+    }
+
+    private abstract class EfCoreBlockCostItem {
+        public int Id { get; set; }
+        public int BlockId { get; set; }
+        public EfCoreBlock Block { get; set; } = null!;
+    }
+
+    private sealed class EfCoreBlockCostItemType1 : EfCoreBlockCostItem {
+        public decimal Price { get; set; }
+    }
+
+    private sealed class EfCoreBlockCostItemType2 : EfCoreBlockCostItem {
+        public decimal TotalPrice { get; set; }
+    }
+
+    private sealed class EfCoreBlockDto {
+        public IEnumerable<EfCoreCostItemDto> CostItems { get; set; } = [];
+    }
+
+    private sealed class EfCoreBillWithBlocksDto {
+        public IEnumerable<EfCoreBlockDto> Blocks { get; set; } = [];
+    }
+
+    private class EfCoreBillWithVirtualListBlocks {
+        public int Id { get; set; }
+        public virtual List<EfCoreVirtualListBlock>? Blocks { get; set; }
+    }
+
+    private class EfCoreVirtualListBlock {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public virtual EfCoreBillWithVirtualListBlocks Bill { get; set; } = null!;
+        public virtual List<EfCoreVirtualListCostItem>? CostItems { get; set; }
+    }
+
+    private abstract class EfCoreVirtualListCostItem {
+        public int Id { get; set; }
+        public int BlockId { get; set; }
+        public virtual EfCoreVirtualListBlock Block { get; set; } = null!;
+    }
+
+    private sealed class EfCoreVirtualListCostItemType1 : EfCoreVirtualListCostItem {
+        public decimal Price { get; set; }
+    }
+
+    private sealed class EfCoreVirtualListCostItemType2 : EfCoreVirtualListCostItem {
+        public decimal TotalPrice { get; set; }
+    }
+
+    private sealed class EfCoreVirtualListBlockDto {
+        public IEnumerable<EfCoreCostItemDto> CostItems { get; set; } = [];
+    }
+
+    private sealed class EfCoreBillWithVirtualListBlocksDto {
+        public IEnumerable<EfCoreVirtualListBlockDto> Blocks { get; set; } = [];
     }
 
     private sealed class EfCorePersonCollectionsDto {
