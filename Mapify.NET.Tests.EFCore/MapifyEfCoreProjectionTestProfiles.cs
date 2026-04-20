@@ -33,6 +33,14 @@ public partial class MapifyEfCoreProjectionTests {
         }
     }
 
+    private sealed class EfCorePolymorphicBillRelationalProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBill, EfCoreBillDto>(b => new EfCoreBillDto {
+                CostItems = b.CostItems!.ProjectTo<EfCoreCostItemDto>()
+            });
+        }
+    }
+
     private sealed class EfCorePersonCollectionsProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCorePerson, EfCorePersonCollectionsDto>(x => new EfCorePersonCollectionsDto {

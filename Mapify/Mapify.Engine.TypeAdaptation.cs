@@ -381,7 +381,9 @@ public partial class Mapify {
         var nestedSourceNullCheck = BuildNestedMemberAccessGuard(sourceAccess);
 
         if (sourceAccess.Type == mapSourceType) {
-            if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
+            if (CanBeNull(sourceAccess.Type)
+                && sourceAccess is not ParameterExpression
+                && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
                 sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
 
@@ -406,7 +408,9 @@ public partial class Mapify {
         }
 
         if (mapSourceType.IsAssignableFrom(sourceAccess.Type)) {
-            if (CanBeNull(sourceAccess.Type) && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
+            if (CanBeNull(sourceAccess.Type)
+                && sourceAccess is not ParameterExpression
+                && !IsInterfaceCollectionLikeType(sourceAccess.Type)) {
                 sourceHasValueCheck = CreateHasValueCheck(sourceAccess);
             }
 
