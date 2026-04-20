@@ -579,12 +579,18 @@ public class MapifyInstanceTests {
     private abstract class PolymorphicCostItemSource {
     }
 
-    private sealed class PolymorphicCostItemType1Source : PolymorphicCostItemSource {
+    private class PolymorphicCostItemType1Source : PolymorphicCostItemSource {
         public decimal Price { get; set; }
     }
 
-    private sealed class PolymorphicCostItemType2Source : PolymorphicCostItemSource {
+    private class PolymorphicCostItemType2Source : PolymorphicCostItemSource {
         public decimal TotalPrice { get; set; }
+    }
+
+    private sealed class PolymorphicCostItemType1ProxySource : PolymorphicCostItemType1Source {
+    }
+
+    private sealed class PolymorphicCostItemType2ProxySource : PolymorphicCostItemType2Source {
     }
 
     private class PolymorphicBillSource {
@@ -1335,6 +1341,55 @@ public class MapifyInstanceTests {
         }
     }
 
+    private class PolymorphicSiblingCastProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<PolymorphicCostItemSource, PolymorphicCostItemTarget>(x => new PolymorphicCostItemTarget {
+                Price = x is PolymorphicCostItemType1Source
+                    ? ((PolymorphicCostItemType1Source)x).Price
+                    : x is PolymorphicCostItemType2Source
+                        ? ((PolymorphicCostItemType2Source)x).TotalPrice
+                        : 0m
+            });
+        }
+    }
+
+    private class PolymorphicNestedName {
+        public string Value { get; set; } = string.Empty;
+    }
+
+    private abstract class PolymorphicNestedItemSource {
+    }
+
+    private class PolymorphicNestedType1Source : PolymorphicNestedItemSource {
+        public PolymorphicNestedName? Name { get; set; }
+    }
+
+    private class PolymorphicNestedType2Source : PolymorphicNestedItemSource {
+        public PolymorphicNestedName? OtherName { get; set; }
+    }
+
+    private sealed class PolymorphicNestedType1ProxySource : PolymorphicNestedType1Source {
+    }
+
+    private sealed class PolymorphicNestedType2ProxySource : PolymorphicNestedType2Source {
+    }
+
+    private class PolymorphicNestedTarget {
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private class PolymorphicNestedSiblingCastProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<PolymorphicNestedItemSource, PolymorphicNestedTarget>(x => new PolymorphicNestedTarget {
+                Name = x is PolymorphicNestedType1Source
+                    ? ((PolymorphicNestedType1Source)x).Name!.Value
+                    : x is PolymorphicNestedType2Source
+                        ? ((PolymorphicNestedType2Source)x).OtherName!.Value
+                        : string.Empty
+            });
+        }
+    }
+
     [Fact]
     public void Map_ToNewObject_ShouldWorkLikeStaticMapper() {
         var mapify = new Mapify();
@@ -2040,6 +2095,42 @@ public class MapifyInstanceTests {
 
         var prices = mapped.CostItems.Select(x => x.Price).ToArray();
         Assert.Equal([10m, 25m], prices);
+    }
+
+    [Fact]
+    public void Map_ShouldHandleProxyLikePolymorphicSiblings_WithGuardedSiblingCasts() {
+        var mapify = new Mapify(new PolymorphicSiblingCastProfile());
+
+        var mapped1 = mapify.Map<PolymorphicCostItemSource, PolymorphicCostItemTarget>(
+            new PolymorphicCostItemType1ProxySource { Price = 10m }
+        );
+
+        var mapped2 = mapify.Map<PolymorphicCostItemSource, PolymorphicCostItemTarget>(
+            new PolymorphicCostItemType2ProxySource { TotalPrice = 25m }
+        );
+
+        Assert.Equal(10m, mapped1.Price);
+        Assert.Equal(25m, mapped2.Price);
+    }
+
+    [Fact]
+    public void Map_ShouldHandleProxyLikePolymorphicSiblings_WithNestedGuardedSiblingCasts() {
+        var mapify = new Mapify(new PolymorphicNestedSiblingCastProfile());
+
+        var mapped1 = mapify.Map<PolymorphicNestedItemSource, PolymorphicNestedTarget>(
+            new PolymorphicNestedType1ProxySource {
+                Name = new PolymorphicNestedName { Value = "A" }
+            }
+        );
+
+        var mapped2 = mapify.Map<PolymorphicNestedItemSource, PolymorphicNestedTarget>(
+            new PolymorphicNestedType2ProxySource {
+                OtherName = new PolymorphicNestedName { Value = "B" }
+            }
+        );
+
+        Assert.Equal("A", mapped1.Name);
+        Assert.Equal("B", mapped2.Name);
     }
 
     [Fact]
