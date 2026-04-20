@@ -8,16 +8,30 @@ public partial class MapifyEfCoreProjectionTests {
         public DbSet<EfCoreAddress> Addresses => Set<EfCoreAddress>();
         public DbSet<EfCoreStreet> Streets => Set<EfCoreStreet>();
         public DbSet<EfCorePhone> Phones => Set<EfCorePhone>();
+        public DbSet<EfCoreBill> Bills => Set<EfCoreBill>();
+        public DbSet<EfCoreCostItem> CostItems => Set<EfCoreCostItem>();
+        public DbSet<EfCoreCostItemType1> CostItemsType1 => Set<EfCoreCostItemType1>();
+        public DbSet<EfCoreCostItemType2> CostItemsType2 => Set<EfCoreCostItemType2>();
+        public DbSet<EfCoreBillWithBlocks> BillsWithBlocks => Set<EfCoreBillWithBlocks>();
+        public DbSet<EfCoreBlock> Blocks => Set<EfCoreBlock>();
+        public DbSet<EfCoreBlockCostItem> BlockCostItems => Set<EfCoreBlockCostItem>();
+        public DbSet<EfCoreBlockCostItemType1> BlockCostItemsType1 => Set<EfCoreBlockCostItemType1>();
+        public DbSet<EfCoreBlockCostItemType2> BlockCostItemsType2 => Set<EfCoreBlockCostItemType2>();
+        public DbSet<EfCoreBillWithVirtualListBlocks> BillsWithVirtualListBlocks => Set<EfCoreBillWithVirtualListBlocks>();
+        public DbSet<EfCoreVirtualListBlock> VirtualListBlocks => Set<EfCoreVirtualListBlock>();
+        public DbSet<EfCoreVirtualListCostItem> VirtualListCostItems => Set<EfCoreVirtualListCostItem>();
+        public DbSet<EfCoreVirtualListCostItemType1> VirtualListCostItemsType1 => Set<EfCoreVirtualListCostItemType1>();
+        public DbSet<EfCoreVirtualListCostItemType2> VirtualListCostItemsType2 => Set<EfCoreVirtualListCostItemType2>();
         public DbSet<EfCoreRecursiveNode> RecursiveNodes => Set<EfCoreRecursiveNode>();
         public DbSet<EfCoreProjectionIgnoreEntity> ProjectionIgnoreEntities => Set<EfCoreProjectionIgnoreEntity>();
     }
 
-    private sealed class EfCoreRecursiveNode {
+    public class EfCoreRecursiveNode {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public int? ParentId { get; set; }
-        public EfCoreRecursiveNode? Parent { get; set; }
-        public ICollection<EfCoreRecursiveNode> Children { get; set; } = [];
+        public virtual EfCoreRecursiveNode? Parent { get; set; }
+        public virtual ICollection<EfCoreRecursiveNode> Children { get; set; } = [];
     }
 
     private sealed class EfCoreRecursiveNodeDto {
@@ -25,38 +39,57 @@ public partial class MapifyEfCoreProjectionTests {
         public List<EfCoreRecursiveNodeDto> Children { get; set; } = [];
     }
 
-    private sealed class EfCoreProjectionIgnoreEntity {
+    public class EfCoreProjectionIgnoreEntity {
         public int Id { get; set; }
         public string Included { get; set; } = string.Empty;
         public string IgnoredFromDb { get; set; } = string.Empty;
     }
 
-    private sealed class EfCorePerson {
+    public class EfCorePerson {
         public int Id { get; set; }
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public int? HomeAddressId { get; set; }
-        public EfCoreAddress HomeAddress { get; set; } = null!;
-        public ICollection<EfCorePhone> Phones { get; set; } = [];
+        public virtual EfCoreAddress HomeAddress { get; set; } = null!;
+        public virtual ICollection<EfCorePhone> Phones { get; set; } = [];
     }
 
-    private sealed class EfCoreAddress {
+    public class EfCoreAddress {
         public int Id { get; set; }
         public string City { get; set; } = string.Empty;
         public int? StreetId { get; set; }
-        public EfCoreStreet? Street { get; set; }
+        public virtual EfCoreStreet? Street { get; set; }
     }
 
-    private sealed class EfCoreStreet {
+    public class EfCoreStreet {
         public int Id { get; set; }
         public int Number { get; set; }
     }
 
-    private sealed class EfCorePhone {
+    public class EfCorePhone {
         public int Id { get; set; }
         public string Number { get; set; } = string.Empty;
         public int PersonId { get; set; }
-        public EfCorePerson Person { get; set; } = null!;
+        public virtual EfCorePerson Person { get; set; } = null!;
+    }
+
+    public class EfCoreBill {
+        public int Id { get; set; }
+        public virtual ICollection<EfCoreCostItem>? CostItems { get; set; }
+    }
+
+    public abstract class EfCoreCostItem {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public virtual EfCoreBill Bill { get; set; } = null!;
+    }
+
+    public class EfCoreCostItemType1 : EfCoreCostItem {
+        public decimal Price { get; set; }
+    }
+
+    public class EfCoreCostItemType2 : EfCoreCostItem {
+        public decimal TotalPrice { get; set; }
     }
 
     private sealed class EfCorePersonDto {
@@ -71,6 +104,82 @@ public partial class MapifyEfCoreProjectionTests {
 
     private sealed class EfCorePhoneDto {
         public string Number { get; set; } = string.Empty;
+    }
+
+    private sealed class EfCoreCostItemDto {
+        public decimal Price { get; set; }
+    }
+
+    private sealed class EfCoreBillDto {
+        public IEnumerable<EfCoreCostItemDto> CostItems { get; set; } = [];
+    }
+
+    public class EfCoreBillWithBlocks {
+        public int Id { get; set; }
+        public virtual ICollection<EfCoreBlock>? Blocks { get; set; }
+    }
+
+    public class EfCoreBlock {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public virtual EfCoreBillWithBlocks Bill { get; set; } = null!;
+        public virtual ICollection<EfCoreBlockCostItem>? CostItems { get; set; }
+    }
+
+    public abstract class EfCoreBlockCostItem {
+        public int Id { get; set; }
+        public int BlockId { get; set; }
+        public virtual EfCoreBlock Block { get; set; } = null!;
+    }
+
+    public class EfCoreBlockCostItemType1 : EfCoreBlockCostItem {
+        public decimal Price { get; set; }
+    }
+
+    public class EfCoreBlockCostItemType2 : EfCoreBlockCostItem {
+        public decimal TotalPrice { get; set; }
+    }
+
+    private sealed class EfCoreBlockDto {
+        public IEnumerable<EfCoreCostItemDto> CostItems { get; set; } = [];
+    }
+
+    private sealed class EfCoreBillWithBlocksDto {
+        public IEnumerable<EfCoreBlockDto> Blocks { get; set; } = [];
+    }
+
+    public class EfCoreBillWithVirtualListBlocks {
+        public int Id { get; set; }
+        public virtual List<EfCoreVirtualListBlock>? Blocks { get; set; }
+    }
+
+    public class EfCoreVirtualListBlock {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public virtual EfCoreBillWithVirtualListBlocks Bill { get; set; } = null!;
+        public virtual List<EfCoreVirtualListCostItem>? CostItems { get; set; }
+    }
+
+    public abstract class EfCoreVirtualListCostItem {
+        public int Id { get; set; }
+        public int BlockId { get; set; }
+        public virtual EfCoreVirtualListBlock Block { get; set; } = null!;
+    }
+
+    public class EfCoreVirtualListCostItemType1 : EfCoreVirtualListCostItem {
+        public decimal Price { get; set; }
+    }
+
+    public class EfCoreVirtualListCostItemType2 : EfCoreVirtualListCostItem {
+        public decimal TotalPrice { get; set; }
+    }
+
+    private sealed class EfCoreVirtualListBlockDto {
+        public IEnumerable<EfCoreCostItemDto> CostItems { get; set; } = [];
+    }
+
+    private sealed class EfCoreBillWithVirtualListBlocksDto {
+        public IEnumerable<EfCoreVirtualListBlockDto> Blocks { get; set; } = [];
     }
 
     private sealed class EfCorePersonCollectionsDto {
@@ -133,4 +242,16 @@ public partial class MapifyEfCoreProjectionTests {
     private sealed class EfCorePersonStreetNullableNumberDto {
         public int? StreetNumber { get; set; }
     }
+
+    private class EfCoreProxyLikeBaseSource {
+        public int Value { get; set; }
+    }
+
+    private sealed class EfCoreProxyLikeDerivedSource : EfCoreProxyLikeBaseSource {
+    }
+
+    private sealed class EfCoreProxyLikeDto {
+        public int Value { get; set; }
+    }
+
 }

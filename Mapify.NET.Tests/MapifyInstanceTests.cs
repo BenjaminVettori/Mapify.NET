@@ -214,6 +214,10 @@ public class MapifyInstanceTests {
         public int Count { get; set; }
     }
 
+    private class DerivedListSummaryTarget {
+        public int Count { get; set; }
+    }
+
     private class CollectionUseMapSource {
         public ElementSource[] ItemsArray { get; set; } = [];
         public List<ElementSource> ItemsList { get; set; } = [];
@@ -229,6 +233,9 @@ public class MapifyInstanceTests {
 
     private class CollectionContainerSource {
         public List<ElementSource> Items { get; set; } = [];
+    }
+
+    private class DerivedElementSourceList : List<ElementSource> {
     }
 
     private class CollectionContainerTarget {
@@ -561,6 +568,37 @@ public class MapifyInstanceTests {
         public string[] PartNames { get; set; } = [];
     }
 
+    private class NullSafeEnumerableBranchSource {
+        public IEnumerable<string>? Values { get; set; }
+    }
+
+    private class NullSafeEnumerableBranchTarget {
+        public IEnumerable<string> Values { get; set; } = [];
+    }
+
+    private abstract class PolymorphicCostItemSource {
+    }
+
+    private sealed class PolymorphicCostItemType1Source : PolymorphicCostItemSource {
+        public decimal Price { get; set; }
+    }
+
+    private sealed class PolymorphicCostItemType2Source : PolymorphicCostItemSource {
+        public decimal TotalPrice { get; set; }
+    }
+
+    private class PolymorphicBillSource {
+        public IEnumerable<PolymorphicCostItemSource>? CostItems { get; set; }
+    }
+
+    private class PolymorphicCostItemTarget {
+        public decimal Price { get; set; }
+    }
+
+    private class PolymorphicBillTarget {
+        public IEnumerable<PolymorphicCostItemTarget> CostItems { get; set; } = [];
+    }
+
     private enum FaultProfileMode {
         None,
         WhitespaceName,
@@ -878,6 +916,26 @@ public class MapifyInstanceTests {
         protected override void Configure() {
             CreateMap<List<ElementSource>, CollectionSummaryTarget>(x => new CollectionSummaryTarget {
                 Count = x.Count() + 10
+            });
+        }
+    }
+
+    private class NamedCollectionSummaryListProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<List<ElementSource>, CollectionSummaryTarget>("ListNamed", x => new CollectionSummaryTarget {
+                Count = x.Count() + 17
+            });
+        }
+    }
+
+    private class BaseAndDerivedListSummaryProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<List<ElementSource>, DerivedListSummaryTarget>(x => new DerivedListSummaryTarget {
+                Count = x.Count() + 100
+            });
+
+            CreateMap<DerivedElementSourceList, DerivedListSummaryTarget>(x => new DerivedListSummaryTarget {
+                Count = x.Count() + 1000
             });
         }
     }
@@ -1257,6 +1315,22 @@ public class MapifyInstanceTests {
                 PartNames = x.Parts
                     .Select(p => p.Name ?? p.SomeOtherPart!.Name ?? "unknown")
                     .ToArray()
+            });
+
+            CreateMap<NullSafeEnumerableBranchSource, NullSafeEnumerableBranchTarget>(x => new NullSafeEnumerableBranchTarget {
+                Values = x.Values == null ? new List<string>() : x.Values
+            });
+
+            CreateMap<PolymorphicBillSource, PolymorphicBillTarget>(b => new PolymorphicBillTarget {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<PolymorphicCostItemTarget>()
+                    : new List<PolymorphicCostItemTarget>()
+            });
+
+            CreateMap<PolymorphicCostItemSource, PolymorphicCostItemTarget>(ci => new PolymorphicCostItemTarget {
+                Price = ci is PolymorphicCostItemType1Source
+                    ? ((PolymorphicCostItemType1Source)ci).Price
+                    : ((PolymorphicCostItemType2Source)ci).TotalPrice
             });
         }
     }
@@ -1943,6 +2017,32 @@ public class MapifyInstanceTests {
     }
 
     [Fact]
+    public void Map_ShouldPreserveConditionalType_WhenCollectionBranchesUseDifferentImplementations() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<NullSafeEnumerableBranchSource, NullSafeEnumerableBranchTarget>(new NullSafeEnumerableBranchSource {
+            Values = null
+        });
+
+        Assert.Empty(mapped.Values);
+    }
+
+    [Fact]
+    public void Map_ProjectToShouldMapPolymorphicItems_WhenElementMapUsesTypeChecks() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<PolymorphicBillSource, PolymorphicBillTarget>(new PolymorphicBillSource {
+            CostItems = [
+                new PolymorphicCostItemType1Source { Price = 10m },
+                new PolymorphicCostItemType2Source { TotalPrice = 25m }
+            ]
+        });
+
+        var prices = mapped.CostItems.Select(x => x.Price).ToArray();
+        Assert.Equal([10m, 25m], prices);
+    }
+
+    [Fact]
     public void Map_ShouldBuildTransitiveDependencies_WhenProfilesAreUnordered() {
         // Registration order is reverse dependency order: root -> middle -> leaf.
         var mapify = new Mapify(new RootProfile(), new MiddleProfile(), new LeafProfile());
@@ -2188,6 +2288,80 @@ public class MapifyInstanceTests {
         Assert.Null(collectionMap);
         Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<NumberSource?, NumberTarget?>());
         Assert.Throws<ArgumentException>(() => mapify.GetRequiredMap<List<ElementSource>, List<ElementTarget>>());
+    }
+
+    [Fact]
+    public void Map_ShouldFallbackToBaseSourceMap_WhenDerivedSourceMapIsMissing() {
+        var mapify = new Mapify(new CollectionSummaryListProfile());
+
+        var source = new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        };
+
+        var mapped = mapify.Map<DerivedElementSourceList, CollectionSummaryTarget>(source);
+
+        Assert.Equal(13, mapped.Count);
+    }
+
+    [Fact]
+    public void Map_Named_ShouldFallbackToBaseSourceMap_WhenDerivedSourceNamedMapIsMissing() {
+        var mapify = new Mapify(new NamedCollectionSummaryListProfile());
+
+        var source = new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        };
+
+        var mapped = mapify.Map<DerivedElementSourceList, CollectionSummaryTarget>(source, "ListNamed");
+
+        Assert.Equal(20, mapped.Count);
+    }
+
+    [Fact]
+    public void GetMap_ShouldFallbackToBaseSourceMap_WhenDerivedSourceMapIsMissing() {
+        var mapify = new Mapify(new CollectionSummaryListProfile());
+
+        var map = mapify.GetMap<DerivedElementSourceList, CollectionSummaryTarget>();
+
+        Assert.NotNull(map);
+        var mapped = map.Compile().Invoke(new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        });
+        Assert.Equal(13, mapped.Count);
+    }
+
+    [Fact]
+    public void GetRequiredMap_Named_ShouldFallbackToBaseSourceMap_WhenDerivedSourceNamedMapIsMissing() {
+        var mapify = new Mapify(new NamedCollectionSummaryListProfile());
+
+        var map = mapify.GetRequiredMap<DerivedElementSourceList, CollectionSummaryTarget>("ListNamed");
+
+        var mapped = map.Compile().Invoke(new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        });
+        Assert.Equal(20, mapped.Count);
+    }
+
+    [Fact]
+    public void Map_ShouldPreferExactDerivedSourceMap_OverBaseSourceFallback() {
+        var mapify = new Mapify(new BaseAndDerivedListSummaryProfile());
+
+        var source = new DerivedElementSourceList {
+            new ElementSource { Value = 1 },
+            new ElementSource { Value = 2 },
+            new ElementSource { Value = 3 }
+        };
+
+        var mapped = mapify.Map<DerivedElementSourceList, DerivedListSummaryTarget>(source);
+
+        Assert.Equal(1003, mapped.Count);
     }
 
     [Fact]

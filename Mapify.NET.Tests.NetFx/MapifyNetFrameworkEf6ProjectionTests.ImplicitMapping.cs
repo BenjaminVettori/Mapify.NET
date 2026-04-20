@@ -1,5 +1,3 @@
-using LinqKit;
-
 namespace Mapify.NET.Tests.NetFx;
 
 public partial class MapifyNetFrameworkEf6ProjectionTests {
@@ -42,7 +40,6 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
         var map = mapify.GetRequiredMap<Ef6Person, Ef6PersonDto>();
 
         var result = db.People
-            .AsExpandable()
             .OrderBy(x => x.Id)
             .Select(map)
             .ToList();
