@@ -87,6 +87,36 @@ public partial class MapifyEfCoreProjectionTests {
     }
 
     [Fact]
+    public void InstanceMapify_ProjectTo_ShouldMapPolymorphicItems_WhenConditionalCollectionBranchIsUsed() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.Bills.Add(new EfCoreBill {
+            CostItems = [
+                new EfCoreCostItemType1 { Price = 10m },
+                new EfCoreCostItemType2 { TotalPrice = 25m }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCorePolymorphicCostItemProfile(),
+            new EfCorePolymorphicBillProfile()
+        ]);
+
+        var projected = db.Bills
+            .ProjectTo<EfCoreBillDto>(mapify)
+            .Single();
+
+        Assert.All(projected.CostItems, item => Assert.NotNull(item));
+        Assert.Equal(new[] { 10m, 25m }, projected.CostItems.Select(x => x.Price).ToArray());
+    }
+
+    [Fact]
     public void InstanceMapify_ProjectToWithParameters_ShouldWorkInEfCoreProjection() {
         var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
             .UseSqlite("Data Source=:memory:")

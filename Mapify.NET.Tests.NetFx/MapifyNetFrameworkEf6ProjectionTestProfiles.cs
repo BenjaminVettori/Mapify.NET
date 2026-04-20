@@ -13,6 +13,26 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
         }
     }
 
+    private class Ef6PolymorphicCostItemProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6CostItem, Ef6CostItemDto>(ci => new Ef6CostItemDto {
+                Price = ci is Ef6CostItemType1
+                    ? ((Ef6CostItemType1)ci).Price
+                    : ((Ef6CostItemType2)ci).TotalPrice
+            });
+        }
+    }
+
+    private class Ef6PolymorphicBillProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<Ef6Bill, Ef6BillDto>(b => new Ef6BillDto {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<Ef6CostItemDto>()
+                    : new List<Ef6CostItemDto>()
+            });
+        }
+    }
+
     private class Ef6PersonCollectionsProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<Ef6Person, Ef6PersonCollectionsDto>(x => new Ef6PersonCollectionsDto {

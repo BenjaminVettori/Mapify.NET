@@ -8,6 +8,10 @@ public partial class MapifyEfCoreProjectionTests {
         public DbSet<EfCoreAddress> Addresses => Set<EfCoreAddress>();
         public DbSet<EfCoreStreet> Streets => Set<EfCoreStreet>();
         public DbSet<EfCorePhone> Phones => Set<EfCorePhone>();
+        public DbSet<EfCoreBill> Bills => Set<EfCoreBill>();
+        public DbSet<EfCoreCostItem> CostItems => Set<EfCoreCostItem>();
+        public DbSet<EfCoreCostItemType1> CostItemsType1 => Set<EfCoreCostItemType1>();
+        public DbSet<EfCoreCostItemType2> CostItemsType2 => Set<EfCoreCostItemType2>();
         public DbSet<EfCoreRecursiveNode> RecursiveNodes => Set<EfCoreRecursiveNode>();
         public DbSet<EfCoreProjectionIgnoreEntity> ProjectionIgnoreEntities => Set<EfCoreProjectionIgnoreEntity>();
     }
@@ -59,6 +63,25 @@ public partial class MapifyEfCoreProjectionTests {
         public EfCorePerson Person { get; set; } = null!;
     }
 
+    private sealed class EfCoreBill {
+        public int Id { get; set; }
+        public ICollection<EfCoreCostItem>? CostItems { get; set; }
+    }
+
+    private abstract class EfCoreCostItem {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public EfCoreBill Bill { get; set; } = null!;
+    }
+
+    private sealed class EfCoreCostItemType1 : EfCoreCostItem {
+        public decimal Price { get; set; }
+    }
+
+    private sealed class EfCoreCostItemType2 : EfCoreCostItem {
+        public decimal TotalPrice { get; set; }
+    }
+
     private sealed class EfCorePersonDto {
         public string FullName { get; set; } = string.Empty;
         public EfCoreAddressDto HomeAddress { get; set; } = null!;
@@ -71,6 +94,14 @@ public partial class MapifyEfCoreProjectionTests {
 
     private sealed class EfCorePhoneDto {
         public string Number { get; set; } = string.Empty;
+    }
+
+    private sealed class EfCoreCostItemDto {
+        public decimal Price { get; set; }
+    }
+
+    private sealed class EfCoreBillDto {
+        public IEnumerable<EfCoreCostItemDto> CostItems { get; set; } = [];
     }
 
     private sealed class EfCorePersonCollectionsDto {

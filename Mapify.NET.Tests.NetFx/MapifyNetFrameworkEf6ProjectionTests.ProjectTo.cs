@@ -81,6 +81,35 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
     }
 
     [Fact]
+    public void InstanceMapify_ProjectTo_ShouldMapPolymorphicItems_WhenConditionalCollectionBranchIsUsed() {
+        using var connection = Effort.DbConnectionFactory.CreateTransient();
+        using var db = new Ef6MapifyContext(connection);
+        db.Database.CreateIfNotExists();
+
+        db.Bills.Add(new Ef6Bill {
+            CostItems = [
+                new Ef6CostItemType1 { Price = 10m },
+                new Ef6CostItemType2 { TotalPrice = 25m }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new Ef6PolymorphicCostItemProfile(),
+            new Ef6PolymorphicBillProfile()
+        ]);
+
+        var projected = db.Bills
+            .AsEnumerable()
+            .ProjectTo<Ef6BillDto>(mapify)
+            .Single();
+
+        Assert.All(projected.CostItems, item => Assert.NotNull(item));
+        Assert.Equal([10m, 25m], projected.CostItems.Select(x => x.Price).ToArray());
+    }
+
+    [Fact]
     public void InstanceMapify_NestedNamedProjectToMarker_ShouldWorkInEf6Projection() {
         using var connection = Effort.DbConnectionFactory.CreateTransient();
         using var db = new Ef6MapifyContext(connection);

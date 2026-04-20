@@ -561,6 +561,37 @@ public class MapifyInstanceTests {
         public string[] PartNames { get; set; } = [];
     }
 
+    private class NullSafeEnumerableBranchSource {
+        public IEnumerable<string>? Values { get; set; }
+    }
+
+    private class NullSafeEnumerableBranchTarget {
+        public IEnumerable<string> Values { get; set; } = [];
+    }
+
+    private abstract class PolymorphicCostItemSource {
+    }
+
+    private sealed class PolymorphicCostItemType1Source : PolymorphicCostItemSource {
+        public decimal Price { get; set; }
+    }
+
+    private sealed class PolymorphicCostItemType2Source : PolymorphicCostItemSource {
+        public decimal TotalPrice { get; set; }
+    }
+
+    private class PolymorphicBillSource {
+        public IEnumerable<PolymorphicCostItemSource>? CostItems { get; set; }
+    }
+
+    private class PolymorphicCostItemTarget {
+        public decimal Price { get; set; }
+    }
+
+    private class PolymorphicBillTarget {
+        public IEnumerable<PolymorphicCostItemTarget> CostItems { get; set; } = [];
+    }
+
     private enum FaultProfileMode {
         None,
         WhitespaceName,
@@ -1258,6 +1289,22 @@ public class MapifyInstanceTests {
                     .Select(p => p.Name ?? p.SomeOtherPart!.Name ?? "unknown")
                     .ToArray()
             });
+
+            CreateMap<NullSafeEnumerableBranchSource, NullSafeEnumerableBranchTarget>(x => new NullSafeEnumerableBranchTarget {
+                Values = x.Values == null ? new List<string>() : x.Values
+            });
+
+            CreateMap<PolymorphicBillSource, PolymorphicBillTarget>(b => new PolymorphicBillTarget {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<PolymorphicCostItemTarget>()
+                    : new List<PolymorphicCostItemTarget>()
+            });
+
+            CreateMap<PolymorphicCostItemSource, PolymorphicCostItemTarget>(ci => new PolymorphicCostItemTarget {
+                Price = ci is PolymorphicCostItemType1Source
+                    ? ((PolymorphicCostItemType1Source)ci).Price
+                    : ((PolymorphicCostItemType2Source)ci).TotalPrice
+            });
         }
     }
 
@@ -1940,6 +1987,32 @@ public class MapifyInstanceTests {
         });
 
         Assert.Equal(["unknown", "secondary"], mapped.PartNames);
+    }
+
+    [Fact]
+    public void Map_ShouldPreserveConditionalType_WhenCollectionBranchesUseDifferentImplementations() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<NullSafeEnumerableBranchSource, NullSafeEnumerableBranchTarget>(new NullSafeEnumerableBranchSource {
+            Values = null
+        });
+
+        Assert.Empty(mapped.Values);
+    }
+
+    [Fact]
+    public void Map_ProjectToShouldMapPolymorphicItems_WhenElementMapUsesTypeChecks() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<PolymorphicBillSource, PolymorphicBillTarget>(new PolymorphicBillSource {
+            CostItems = [
+                new PolymorphicCostItemType1Source { Price = 10m },
+                new PolymorphicCostItemType2Source { TotalPrice = 25m }
+            ]
+        });
+
+        var prices = mapped.CostItems.Select(x => x.Price).ToArray();
+        Assert.Equal([10m, 25m], prices);
     }
 
     [Fact]

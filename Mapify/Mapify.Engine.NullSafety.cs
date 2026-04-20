@@ -33,7 +33,7 @@ public partial class Mapify {
                 AdaptFallbackToType(fallback, conditionalExpression.IfFalse.Type)
             );
 
-            return Expression.Condition(guardedTest, guardedIfTrue, guardedIfFalse);
+            return Expression.Condition(guardedTest, guardedIfTrue, guardedIfFalse, conditionalExpression.Type);
         }
 
         var guard = BuildNestedMemberAccessGuard(expression);

@@ -472,10 +472,29 @@ public partial class Mapify {
         => type.IsInterface && IsCollectionLikeType(type);
 
     private static Expression CreateHasValueCheck(Expression valueExpression) {
+        valueExpression = UnwrapNullCheckConversion(valueExpression);
+
         var checkExpression = IsInterfaceCollectionLikeType(valueExpression.Type)
             ? Expression.Convert(valueExpression, typeof(object))
             : valueExpression;
 
         return Expression.NotEqual(checkExpression, Expression.Constant(null, checkExpression.Type));
+    }
+
+    private static Expression UnwrapNullCheckConversion(Expression expression) {
+        var current = expression;
+
+        while (current is UnaryExpression unary
+               && (unary.NodeType == ExpressionType.Convert
+                   || unary.NodeType == ExpressionType.ConvertChecked
+                   || unary.NodeType == ExpressionType.TypeAs)) {
+            if (!CanBeNull(unary.Operand.Type)) {
+                break;
+            }
+
+            current = unary.Operand;
+        }
+
+        return current;
     }
 }

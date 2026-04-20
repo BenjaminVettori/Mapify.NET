@@ -13,6 +13,26 @@ public partial class MapifyEfCoreProjectionTests {
         }
     }
 
+    private sealed class EfCorePolymorphicCostItemProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreCostItem, EfCoreCostItemDto>(ci => new EfCoreCostItemDto {
+                Price = ci is EfCoreCostItemType1
+                    ? ((EfCoreCostItemType1)ci).Price
+                    : ((EfCoreCostItemType2)ci).TotalPrice
+            });
+        }
+    }
+
+    private sealed class EfCorePolymorphicBillProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreBill, EfCoreBillDto>(b => new EfCoreBillDto {
+                CostItems = b.CostItems != null
+                    ? b.CostItems.ProjectTo<EfCoreCostItemDto>()
+                    : new List<EfCoreCostItemDto>()
+            });
+        }
+    }
+
     private sealed class EfCorePersonCollectionsProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCorePerson, EfCorePersonCollectionsDto>(x => new EfCorePersonCollectionsDto {

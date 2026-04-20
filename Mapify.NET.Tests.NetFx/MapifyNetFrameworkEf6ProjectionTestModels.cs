@@ -13,6 +13,10 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
         public DbSet<Ef6Person> People { get; set; } = null!;
         public DbSet<Ef6Address> Addresses { get; set; } = null!;
         public DbSet<Ef6Phone> Phones { get; set; } = null!;
+        public DbSet<Ef6Bill> Bills { get; set; } = null!;
+        public DbSet<Ef6CostItem> CostItems { get; set; } = null!;
+        public DbSet<Ef6CostItemType1> CostItemsType1 { get; set; } = null!;
+        public DbSet<Ef6CostItemType2> CostItemsType2 { get; set; } = null!;
         public DbSet<Ef6RecursiveNode> RecursiveNodes { get; set; } = null!;
         public DbSet<Ef6ProjectionIgnoreEntity> ProjectionIgnoreEntities { get; set; } = null!;
     }
@@ -57,6 +61,25 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
         public Ef6Person Person { get; set; } = null!;
     }
 
+    public class Ef6Bill {
+        public int Id { get; set; }
+        public ICollection<Ef6CostItem>? CostItems { get; set; }
+    }
+
+    public abstract class Ef6CostItem {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public Ef6Bill Bill { get; set; } = null!;
+    }
+
+    public class Ef6CostItemType1 : Ef6CostItem {
+        public decimal Price { get; set; }
+    }
+
+    public class Ef6CostItemType2 : Ef6CostItem {
+        public decimal TotalPrice { get; set; }
+    }
+
     public class Ef6PersonDto {
         public string FullName { get; set; } = string.Empty;
         public Ef6AddressDto HomeAddress { get; set; } = null!;
@@ -69,6 +92,14 @@ public partial class MapifyNetFrameworkEf6ProjectionTests {
 
     public class Ef6PhoneDto {
         public string Number { get; set; } = string.Empty;
+    }
+
+    public class Ef6CostItemDto {
+        public decimal Price { get; set; }
+    }
+
+    public class Ef6BillDto {
+        public IEnumerable<Ef6CostItemDto> CostItems { get; set; } = [];
     }
 
     public class Ef6PersonCollectionsDto {
