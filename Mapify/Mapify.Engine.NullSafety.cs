@@ -111,6 +111,10 @@ public partial class Mapify {
         }
 
         if (TryAdaptMappedResult(fallback, targetType, out var adapted)) {
+            if (adapted.Type != targetType && targetType.IsAssignableFrom(adapted.Type)) {
+                return Expression.Convert(adapted, targetType);
+            }
+
             return adapted;
         }
 
@@ -186,6 +190,28 @@ public partial class Mapify {
 
         protected override Expression VisitLambda<T>(Expression<T> node)
             => node;
+
+        protected override Expression VisitConditional(ConditionalExpression node) {
+            Visit(node.Test);
+
+            var ifTrueGuard = CollectGuard(node.IfTrue);
+            if (ifTrueGuard != null) {
+                _checks.Add(Expression.OrElse(Expression.Not(node.Test), ifTrueGuard));
+            }
+
+            var ifFalseGuard = CollectGuard(node.IfFalse);
+            if (ifFalseGuard != null) {
+                _checks.Add(Expression.OrElse(node.Test, ifFalseGuard));
+            }
+
+            return node;
+        }
+
+        private static Expression? CollectGuard(Expression expression) {
+            var collector = new NestedMemberAccessNullGuardCollector();
+            collector.Visit(expression);
+            return collector.BuildGuard();
+        }
 
         private static bool IsNullableHasValueAccess(MemberExpression node) {
             if (node.Member.Name != "HasValue") {

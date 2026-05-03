@@ -577,6 +577,250 @@ public partial class MapifyEfCoreProjectionTests {
     }
 
     [Fact]
+    public void InstanceMapify_ProjectTo_ShouldApplyNamedScalarAggregate_InMemoryProvider() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.NamedScalarContainers.Add(new EfCoreNamedScalarContainer {
+            Lines = [
+                new EfCoreNamedScalarLine { Price = 100m, Discount = 0.1m },
+                new EfCoreNamedScalarLine { Price = 80m, Discount = 0.25m }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedScalarLineProfile(),
+            new EfCoreNamedScalarContainerProfile()
+        ]);
+
+        var projected = db.NamedScalarContainers
+            .ProjectTo<EfCoreNamedScalarContainerDto>(mapify)
+            .Single();
+
+        Assert.Equal(150m, projected.Total);
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldApplyNamedScalarAggregate_SqliteProvider() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+
+        db.NamedScalarContainers.Add(new EfCoreNamedScalarContainer {
+            Lines = [
+                new EfCoreNamedScalarLine { Price = 100m, Discount = 0.1m },
+                new EfCoreNamedScalarLine { Price = 80m, Discount = 0.25m }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedScalarLineProfile(),
+            new EfCoreNamedScalarContainerProfile()
+        ]);
+
+        var projected = db.NamedScalarContainers
+            .ProjectTo<EfCoreNamedScalarContainerDto>(mapify)
+            .Single();
+
+        Assert.Equal(150m, projected.Total);
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldApplyNamedScalarAggregateMatrix_InMemoryProvider() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.NamedScalarContainers.Add(new EfCoreNamedScalarContainer {
+            Lines = [
+                new EfCoreNamedScalarLine { Price = 100m, Discount = 0.1m },
+                new EfCoreNamedScalarLine { Price = 80m, Discount = 0.25m },
+                new EfCoreNamedScalarLine { Price = 50m, Discount = 0.2m }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedScalarLineProfile(),
+            new EfCoreNamedScalarContainerProfile()
+        ]);
+
+        var projected = db.NamedScalarContainers
+            .ProjectTo<EfCoreNamedScalarAggregateDto>(mapify)
+            .Single();
+
+        Assert.Equal(190m, projected.Sum);
+        Assert.Equal(190m / 3m, projected.Average);
+        Assert.Equal(40m, projected.Min);
+        Assert.Equal(90m, projected.Max);
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldApplyNamedScalarAggregateMatrix_SqliteProvider() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+
+        db.NamedScalarContainers.Add(new EfCoreNamedScalarContainer {
+            Lines = [
+                new EfCoreNamedScalarLine { Price = 100m, Discount = 0.1m },
+                new EfCoreNamedScalarLine { Price = 80m, Discount = 0.25m },
+                new EfCoreNamedScalarLine { Price = 50m, Discount = 0.2m }
+            ]
+        });
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedScalarLineProfile(),
+            new EfCoreNamedScalarContainerProfile()
+        ]);
+
+        var projected = db.NamedScalarContainers
+            .ProjectTo<EfCoreNamedScalarAggregateDto>(mapify)
+            .Single();
+
+        Assert.Equal(190m, projected.Sum);
+        Assert.Equal(190m / 3m, projected.Average);
+        Assert.Equal(40m, projected.Min);
+        Assert.Equal(90m, projected.Max);
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldApplyNamedNullableScalarAggregateMatrix_InMemoryProvider() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        db.NamedNullableScalarContainers.AddRange(
+            new EfCoreNamedNullableScalarContainer {
+                Lines = [
+                    new EfCoreNamedNullableScalarLine { Price = 100m, Discount = 0.1m },
+                    new EfCoreNamedNullableScalarLine { Price = null, Discount = 0.5m },
+                    new EfCoreNamedNullableScalarLine { Price = 50m, Discount = 0.2m }
+                ]
+            },
+            new EfCoreNamedNullableScalarContainer {
+                Lines = [
+                    new EfCoreNamedNullableScalarLine { Price = null, Discount = 0m },
+                    new EfCoreNamedNullableScalarLine { Price = null, Discount = 0.5m }
+                ]
+            },
+            new EfCoreNamedNullableScalarContainer {
+                Lines = []
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedNullableScalarLineProfile(),
+            new EfCoreNamedNullableScalarContainerProfile()
+        ]);
+
+        var projected = db.NamedNullableScalarContainers
+            .OrderBy(x => x.Id)
+            .ProjectTo<EfCoreNamedNullableScalarAggregateDto>(mapify)
+            .ToArray();
+
+        Assert.Equal(3, projected.Length);
+
+        Assert.Equal(130m, projected[0].Sum);
+        Assert.Equal(65m, projected[0].Average);
+        Assert.Equal(40m, projected[0].Min);
+        Assert.Equal(90m, projected[0].Max);
+
+        Assert.Equal(0m, projected[1].Sum);
+        Assert.Equal(0m, projected[1].Average);
+        Assert.Null(projected[1].Min);
+        Assert.Null(projected[1].Max);
+
+        Assert.Equal(0m, projected[2].Sum);
+        Assert.Equal(0m, projected[2].Average);
+        Assert.Null(projected[2].Min);
+        Assert.Null(projected[2].Max);
+    }
+
+    [Fact]
+    public void InstanceMapify_ProjectTo_ShouldApplyNamedNullableScalarAggregateMatrix_SqliteProvider() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+
+        db.NamedNullableScalarContainers.AddRange(
+            new EfCoreNamedNullableScalarContainer {
+                Lines = [
+                    new EfCoreNamedNullableScalarLine { Price = 100m, Discount = 0.1m },
+                    new EfCoreNamedNullableScalarLine { Price = null, Discount = 0.5m },
+                    new EfCoreNamedNullableScalarLine { Price = 50m, Discount = 0.2m }
+                ]
+            },
+            new EfCoreNamedNullableScalarContainer {
+                Lines = [
+                    new EfCoreNamedNullableScalarLine { Price = null, Discount = 0m },
+                    new EfCoreNamedNullableScalarLine { Price = null, Discount = 0.5m }
+                ]
+            },
+            new EfCoreNamedNullableScalarContainer {
+                Lines = []
+            }
+        );
+
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreNamedNullableScalarLineProfile(),
+            new EfCoreNamedNullableScalarContainerProfile()
+        ]);
+
+        var projected = db.NamedNullableScalarContainers
+            .OrderBy(x => x.Id)
+            .ProjectTo<EfCoreNamedNullableScalarAggregateDto>(mapify)
+            .ToArray();
+
+        Assert.Equal(3, projected.Length);
+
+        Assert.Equal(130m, projected[0].Sum);
+        Assert.Equal(65m, projected[0].Average);
+        Assert.Equal(40m, projected[0].Min);
+        Assert.Equal(90m, projected[0].Max);
+
+        Assert.Equal(0m, projected[1].Sum);
+        Assert.Equal(0m, projected[1].Average);
+        Assert.Null(projected[1].Min);
+        Assert.Null(projected[1].Max);
+
+        Assert.Equal(0m, projected[2].Sum);
+        Assert.Equal(0m, projected[2].Average);
+        Assert.Null(projected[2].Min);
+        Assert.Null(projected[2].Max);
+    }
+
+    [Fact]
     public void Constructor_ShouldThrow_WhenRecursiveProjectToDepthExceedsHardCap() {
         var mapify = new Mapify((IEnumerable<MapifyProfile>?)null);
         RegisterDepthElevenRecursiveMap(mapify);

@@ -412,6 +412,84 @@ public class MapifyInstanceTests {
         public ProjectToNamedPhoneTarget[] Phones { get; set; } = [];
     }
 
+    private class NamedScalarLineSource {
+        public double Price { get; set; }
+        public double Discount { get; set; }
+    }
+
+    private class NamedScalarDocumentSource {
+        public IEnumerable<NamedScalarLineSource> Lines { get; set; } = [];
+    }
+
+    private class NamedScalarDocumentTarget {
+        public double Total { get; set; }
+    }
+
+    private class NamedScalarAggregateTarget {
+        public double Sum { get; set; }
+        public double Average { get; set; }
+        public double Min { get; set; }
+        public double Max { get; set; }
+    }
+
+    private class NamedNullableScalarLineSource {
+        public double? Price { get; set; }
+        public double Discount { get; set; }
+    }
+
+    private class NamedNullableScalarDocumentSource {
+        public IEnumerable<NamedNullableScalarLineSource> Lines { get; set; } = [];
+    }
+
+    private class NamedNullableScalarAggregateTarget {
+        public double Sum { get; set; }
+        public double Average { get; set; }
+        public double? Min { get; set; }
+        public double? Max { get; set; }
+    }
+
+    private class ConditionalBranchLeafSource {
+        public int Number { get; set; }
+    }
+
+    private class ConditionalBranchSource {
+        public bool UsePrimary { get; set; }
+        public ConditionalBranchLeafSource? Primary { get; set; }
+        public ConditionalBranchLeafSource? Secondary { get; set; }
+    }
+
+    private class ConditionalBranchTarget {
+        public int Number { get; set; }
+    }
+
+    private class ConditionalNullableLeafSource {
+        public int? Number { get; set; }
+    }
+
+    private class ConditionalNullableSource {
+        public bool UsePrimary { get; set; }
+        public ConditionalNullableLeafSource? Primary { get; set; }
+        public ConditionalNullableLeafSource? Secondary { get; set; }
+    }
+
+    private class ConditionalNullableTarget {
+        public int Number { get; set; }
+    }
+
+    private class ConditionalStringLeafSource {
+        public string? Text { get; set; }
+    }
+
+    private class ConditionalStringSource {
+        public bool UsePrimary { get; set; }
+        public ConditionalStringLeafSource? Primary { get; set; }
+        public ConditionalStringLeafSource? Secondary { get; set; }
+    }
+
+    private class ConditionalStringTarget {
+        public bool IsEmpty { get; set; }
+    }
+
     private class ProjectToOuterScopeDataSource {
         public string DeviceNumber { get; set; } = string.Empty;
     }
@@ -573,6 +651,22 @@ public class MapifyInstanceTests {
     }
 
     private class NullSafeEnumerableBranchTarget {
+        public IEnumerable<string> Values { get; set; } = [];
+    }
+
+    private class NestedCollectionItemSource {
+        public string? Value { get; set; }
+    }
+
+    private class NestedCollectionHolderSource {
+        public IEnumerable<NestedCollectionItemSource> Items { get; set; } = [];
+    }
+
+    private class NestedCollectionProjectionSource {
+        public NestedCollectionHolderSource? Holder { get; set; }
+    }
+
+    private class NestedCollectionProjectionTarget {
         public IEnumerable<string> Values { get; set; } = [];
     }
 
@@ -1214,6 +1308,64 @@ public class MapifyInstanceTests {
         }
     }
 
+    private class NamedScalarProjectionProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NamedScalarLineSource, double>("Price", line =>
+                line.Price - line.Price * line.Discount
+            );
+
+            CreateMap<NamedScalarDocumentSource, NamedScalarDocumentTarget>(doc => new NamedScalarDocumentTarget {
+                Total = doc.Lines.ProjectTo<double>("Price").Sum()
+            });
+
+            CreateMap<NamedScalarDocumentSource, NamedScalarAggregateTarget>(doc => new NamedScalarAggregateTarget {
+                Sum = doc.Lines.ProjectTo<double>("Price").Sum(),
+                Average = doc.Lines.ProjectTo<double>("Price").Average(),
+                Min = doc.Lines.ProjectTo<double>("Price").Min(),
+                Max = doc.Lines.ProjectTo<double>("Price").Max()
+            });
+        }
+    }
+
+    private class NamedNullableScalarProjectionProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<NamedNullableScalarLineSource, double?>("PriceNullable", line =>
+                line.Price != null
+                    ? line.Price - line.Price * line.Discount
+                    : null
+            );
+
+            CreateMap<NamedNullableScalarDocumentSource, NamedNullableScalarAggregateTarget>(doc => new NamedNullableScalarAggregateTarget {
+                Sum = doc.Lines.ProjectTo<double?>("PriceNullable").Sum() ?? 0,
+                Average = doc.Lines.ProjectTo<double?>("PriceNullable").Average() ?? 0,
+                Min = doc.Lines.ProjectTo<double?>("PriceNullable").Min(),
+                Max = doc.Lines.ProjectTo<double?>("PriceNullable").Max()
+            });
+        }
+    }
+
+    private class ConditionalBranchNullSafetyProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<ConditionalBranchSource, ConditionalBranchTarget>(x => new ConditionalBranchTarget {
+                Number = x.UsePrimary
+                    ? x.Primary!.Number
+                    : x.Secondary!.Number
+            });
+
+            CreateMap<ConditionalNullableSource, ConditionalNullableTarget>(x => new ConditionalNullableTarget {
+                Number = (x.UsePrimary
+                    ? x.Primary!.Number
+                    : x.Secondary!.Number) ?? 0
+            });
+
+            CreateMap<ConditionalStringSource, ConditionalStringTarget>(x => new ConditionalStringTarget {
+                IsEmpty = (x.UsePrimary
+                    ? x.Primary!.Text
+                    : x.Secondary!.Text) == null
+            });
+        }
+    }
+
     private class ParameterizedProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<ParameterizedSource, ParameterizedTarget>(x => new ParameterizedTarget {
@@ -1325,6 +1477,10 @@ public class MapifyInstanceTests {
 
             CreateMap<NullSafeEnumerableBranchSource, NullSafeEnumerableBranchTarget>(x => new NullSafeEnumerableBranchTarget {
                 Values = x.Values == null ? new List<string>() : x.Values
+            });
+
+            CreateMap<NestedCollectionProjectionSource, NestedCollectionProjectionTarget>(x => new NestedCollectionProjectionTarget {
+                Values = x.Holder!.Items.Select(i => i.Value ?? string.Empty)
             });
 
             CreateMap<PolymorphicBillSource, PolymorphicBillTarget>(b => new PolymorphicBillTarget {
@@ -2155,6 +2311,17 @@ public class MapifyInstanceTests {
 
         var mapped = mapify.Map<NullSafeEnumerableBranchSource, NullSafeEnumerableBranchTarget>(new NullSafeEnumerableBranchSource {
             Values = null
+        });
+
+        Assert.Empty(mapped.Values);
+    }
+
+    [Fact]
+    public void Map_ShouldApplyEmptyCollectionFallback_ForNestedCollectionProjection_WhenInterfaceDestinationIsNonNullable() {
+        var mapify = new Mapify(new NullSafeNestedMemberAccessProfile());
+
+        var mapped = mapify.Map<NestedCollectionProjectionSource, NestedCollectionProjectionTarget>(new NestedCollectionProjectionSource {
+            Holder = null
         });
 
         Assert.Empty(mapped.Values);
@@ -3286,6 +3453,153 @@ public class MapifyInstanceTests {
         );
 
         Assert.Equal(["+1-200 [MASKED]"], mapped.Phones.Select(x => x.Number).ToArray());
+    }
+
+    [Fact]
+    public void Map_ShouldApplyNamedScalarProjectToInsideSum_WhenScalarMapUsesArithmeticExpression() {
+        var mapify = new Mapify(new NamedScalarProjectionProfile());
+
+        var mapped = mapify.Map<NamedScalarDocumentSource, NamedScalarDocumentTarget>(new NamedScalarDocumentSource {
+            Lines = [
+                new NamedScalarLineSource { Price = 100d, Discount = 0.1d },
+                new NamedScalarLineSource { Price = 80d, Discount = 0.25d }
+            ]
+        });
+
+        Assert.Equal(150d, mapped.Total, 8);
+    }
+
+    [Fact]
+    public void Map_ShouldApplyNamedScalarProjectToAggregateMatrix_ForSumAverageMinMax() {
+        var mapify = new Mapify(new NamedScalarProjectionProfile());
+
+        var mapped = mapify.Map<NamedScalarDocumentSource, NamedScalarAggregateTarget>(new NamedScalarDocumentSource {
+            Lines = [
+                new NamedScalarLineSource { Price = 100d, Discount = 0.1d },
+                new NamedScalarLineSource { Price = 80d, Discount = 0.25d },
+                new NamedScalarLineSource { Price = 50d, Discount = 0.2d }
+            ]
+        });
+
+        Assert.Equal(190d, mapped.Sum, 8);
+        Assert.Equal(190d / 3d, mapped.Average, 8);
+        Assert.Equal(40d, mapped.Min, 8);
+        Assert.Equal(90d, mapped.Max, 8);
+    }
+
+    [Fact]
+    public void Map_ShouldApplyNamedNullableScalarProjectToAggregate_WithNullFilteringSemantics() {
+        var mapify = new Mapify(new NamedNullableScalarProjectionProfile());
+
+        var mixed = mapify.Map<NamedNullableScalarDocumentSource, NamedNullableScalarAggregateTarget>(new NamedNullableScalarDocumentSource {
+            Lines = [
+                new NamedNullableScalarLineSource { Price = 100d, Discount = 0.1d },
+                new NamedNullableScalarLineSource { Price = null, Discount = 0.5d },
+                new NamedNullableScalarLineSource { Price = 50d, Discount = 0.2d }
+            ]
+        });
+
+        var allNull = mapify.Map<NamedNullableScalarDocumentSource, NamedNullableScalarAggregateTarget>(new NamedNullableScalarDocumentSource {
+            Lines = [
+                new NamedNullableScalarLineSource { Price = null, Discount = 0d },
+                new NamedNullableScalarLineSource { Price = null, Discount = 0.5d }
+            ]
+        });
+
+        Assert.Equal(130d, mixed.Sum, 8);
+        Assert.Equal(65d, mixed.Average, 8);
+        Assert.Equal(40d, mixed.Min!.Value, 8);
+        Assert.Equal(90d, mixed.Max!.Value, 8);
+        Assert.Equal(0d, allNull.Sum, 8);
+        Assert.Equal(0d, allNull.Average, 8);
+        Assert.Null(allNull.Min);
+        Assert.Null(allNull.Max);
+    }
+
+    [Fact]
+    public void Map_ShouldApplyNamedNullableScalarProjectToAggregate_ForEmptySequence() {
+        var mapify = new Mapify(new NamedNullableScalarProjectionProfile());
+
+        var mapped = mapify.Map<NamedNullableScalarDocumentSource, NamedNullableScalarAggregateTarget>(new NamedNullableScalarDocumentSource {
+            Lines = []
+        });
+
+        Assert.Equal(0d, mapped.Sum, 8);
+        Assert.Equal(0d, mapped.Average, 8);
+        Assert.Null(mapped.Min);
+        Assert.Null(mapped.Max);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepBranchLocalNullSafety_WhenPrimaryBranchIsSelected() {
+        var mapify = new Mapify(new ConditionalBranchNullSafetyProfile());
+
+        var mapped = mapify.Map<ConditionalBranchSource, ConditionalBranchTarget>(new ConditionalBranchSource {
+            UsePrimary = true,
+            Primary = new ConditionalBranchLeafSource { Number = 42 },
+            Secondary = null
+        });
+
+        Assert.Equal(42, mapped.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldKeepBranchLocalNullSafety_WhenSecondaryBranchIsSelected() {
+        var mapify = new Mapify(new ConditionalBranchNullSafetyProfile());
+
+        var mapped = mapify.Map<ConditionalBranchSource, ConditionalBranchTarget>(new ConditionalBranchSource {
+            UsePrimary = false,
+            Primary = null,
+            Secondary = new ConditionalBranchLeafSource { Number = 17 }
+        });
+
+        Assert.Equal(17, mapped.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldFallbackForSelectedConditionalBranch_WhenSelectedNestedPathIsNull() {
+        var mapify = new Mapify(new ConditionalBranchNullSafetyProfile());
+
+        var mapped = mapify.Map<ConditionalBranchSource, ConditionalBranchTarget>(new ConditionalBranchSource {
+            UsePrimary = true,
+            Primary = null,
+            Secondary = new ConditionalBranchLeafSource { Number = 11 }
+        });
+
+        Assert.Equal(0, mapped.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldHandleConditionalNullableCoalesceChain_WithoutCrossBranchInterference() {
+        var mapify = new Mapify(new ConditionalBranchNullSafetyProfile());
+
+        var mapped = mapify.Map<ConditionalNullableSource, ConditionalNullableTarget>(new ConditionalNullableSource {
+            UsePrimary = false,
+            Primary = new ConditionalNullableLeafSource { Number = null },
+            Secondary = new ConditionalNullableLeafSource { Number = 33 }
+        });
+
+        Assert.Equal(33, mapped.Number);
+    }
+
+    [Fact]
+    public void Map_ShouldPreserveConditionalNullEqualityBooleanSemantics() {
+        var mapify = new Mapify(new ConditionalBranchNullSafetyProfile());
+
+        var selectedNull = mapify.Map<ConditionalStringSource, ConditionalStringTarget>(new ConditionalStringSource {
+            UsePrimary = true,
+            Primary = null,
+            Secondary = new ConditionalStringLeafSource { Text = "secondary" }
+        });
+
+        var selectedNonNull = mapify.Map<ConditionalStringSource, ConditionalStringTarget>(new ConditionalStringSource {
+            UsePrimary = false,
+            Primary = null,
+            Secondary = new ConditionalStringLeafSource { Text = "secondary" }
+        });
+
+        Assert.True(selectedNull.IsEmpty);
+        Assert.False(selectedNonNull.IsEmpty);
     }
 
     public static IEnumerable<object[]> CollectionHierarchyKinds() {

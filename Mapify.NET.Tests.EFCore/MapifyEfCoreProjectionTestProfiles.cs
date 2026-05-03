@@ -278,6 +278,50 @@ public partial class MapifyEfCoreProjectionTests {
         }
     }
 
+    private sealed class EfCoreNamedScalarLineProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreNamedScalarLine, decimal>("Price", line =>
+                line.Price - line.Price * line.Discount
+            );
+        }
+    }
+
+    private sealed class EfCoreNamedScalarContainerProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreNamedScalarContainer, EfCoreNamedScalarContainerDto>(x => new EfCoreNamedScalarContainerDto {
+                Total = x.Lines.ProjectTo<decimal>("Price").Sum()
+            });
+
+            CreateMap<EfCoreNamedScalarContainer, EfCoreNamedScalarAggregateDto>(x => new EfCoreNamedScalarAggregateDto {
+                Sum = x.Lines.ProjectTo<decimal>("Price").Sum(),
+                Average = x.Lines.ProjectTo<decimal>("Price").Average(),
+                Min = x.Lines.ProjectTo<decimal>("Price").Min(),
+                Max = x.Lines.ProjectTo<decimal>("Price").Max()
+            });
+        }
+    }
+
+    private sealed class EfCoreNamedNullableScalarLineProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreNamedNullableScalarLine, decimal?>("PriceNullable", line =>
+                line.Price != null
+                    ? line.Price - line.Price * line.Discount
+                    : null
+            );
+        }
+    }
+
+    private sealed class EfCoreNamedNullableScalarContainerProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreNamedNullableScalarContainer, EfCoreNamedNullableScalarAggregateDto>(x => new EfCoreNamedNullableScalarAggregateDto {
+                Sum = x.Lines.ProjectTo<decimal?>("PriceNullable").Sum() ?? 0,
+                Average = x.Lines.ProjectTo<decimal?>("PriceNullable").Average() ?? 0,
+                Min = x.Lines.ProjectTo<decimal?>("PriceNullable").Min(),
+                Max = x.Lines.ProjectTo<decimal?>("PriceNullable").Max()
+            });
+        }
+    }
+
     private sealed class EfCoreProxyLikeBaseProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCoreProxyLikeBaseSource, EfCoreProxyLikeDto>(x => new EfCoreProxyLikeDto {

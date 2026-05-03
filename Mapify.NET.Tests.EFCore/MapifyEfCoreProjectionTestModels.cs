@@ -24,6 +24,10 @@ public partial class MapifyEfCoreProjectionTests {
         public DbSet<EfCoreVirtualListCostItemType2> VirtualListCostItemsType2 => Set<EfCoreVirtualListCostItemType2>();
         public DbSet<EfCoreRecursiveNode> RecursiveNodes => Set<EfCoreRecursiveNode>();
         public DbSet<EfCoreProjectionIgnoreEntity> ProjectionIgnoreEntities => Set<EfCoreProjectionIgnoreEntity>();
+        public DbSet<EfCoreNamedScalarContainer> NamedScalarContainers => Set<EfCoreNamedScalarContainer>();
+        public DbSet<EfCoreNamedScalarLine> NamedScalarLines => Set<EfCoreNamedScalarLine>();
+        public DbSet<EfCoreNamedNullableScalarContainer> NamedNullableScalarContainers => Set<EfCoreNamedNullableScalarContainer>();
+        public DbSet<EfCoreNamedNullableScalarLine> NamedNullableScalarLines => Set<EfCoreNamedNullableScalarLine>();
     }
 
     public class EfCoreRecursiveNode {
@@ -241,6 +245,50 @@ public partial class MapifyEfCoreProjectionTests {
 
     private sealed class EfCorePersonStreetNullableNumberDto {
         public int? StreetNumber { get; set; }
+    }
+
+    public class EfCoreNamedScalarContainer {
+        public int Id { get; set; }
+        public virtual ICollection<EfCoreNamedScalarLine> Lines { get; set; } = [];
+    }
+
+    public class EfCoreNamedScalarLine {
+        public int Id { get; set; }
+        public int ContainerId { get; set; }
+        public virtual EfCoreNamedScalarContainer Container { get; set; } = null!;
+        public decimal Price { get; set; }
+        public decimal Discount { get; set; }
+    }
+
+    private sealed class EfCoreNamedScalarContainerDto {
+        public decimal Total { get; set; }
+    }
+
+    private sealed class EfCoreNamedScalarAggregateDto {
+        public decimal Sum { get; set; }
+        public decimal Average { get; set; }
+        public decimal Min { get; set; }
+        public decimal Max { get; set; }
+    }
+
+    public class EfCoreNamedNullableScalarContainer {
+        public int Id { get; set; }
+        public virtual ICollection<EfCoreNamedNullableScalarLine> Lines { get; set; } = [];
+    }
+
+    public class EfCoreNamedNullableScalarLine {
+        public int Id { get; set; }
+        public int ContainerId { get; set; }
+        public virtual EfCoreNamedNullableScalarContainer Container { get; set; } = null!;
+        public decimal? Price { get; set; }
+        public decimal Discount { get; set; }
+    }
+
+    private sealed class EfCoreNamedNullableScalarAggregateDto {
+        public decimal Sum { get; set; }
+        public decimal Average { get; set; }
+        public decimal? Min { get; set; }
+        public decimal? Max { get; set; }
     }
 
     private class EfCoreProxyLikeBaseSource {
