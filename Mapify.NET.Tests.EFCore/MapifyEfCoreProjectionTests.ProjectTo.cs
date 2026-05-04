@@ -105,6 +105,76 @@ public partial class MapifyEfCoreProjectionTests {
     }
 
     [Fact]
+    public void InstanceMapify_ProjectTo_ShouldTranslateGenericAggregateRowProjection_WithDistinctOrderTakeCollections() {
+        var options = new DbContextOptionsBuilder<EfCoreMapifyContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var db = new EfCoreMapifyContext(options);
+
+        var owner = new EfCoreAggregateOwner {
+            Email = "a@b.com",
+            PhoneNumber = "+1-100",
+            FormalContact = true,
+            IsStudent = false
+        };
+
+        var location = new EfCoreAggregateLocation { City = "Zurich" };
+
+        var p1 = new EfCoreAggregateParticipant { Name = "Anna", Surname = "Able" };
+        var p2 = new EfCoreAggregateParticipant { Name = "Bob", Surname = "Baker" };
+        var p3 = new EfCoreAggregateParticipant { Name = "Cara", Surname = "Clark" };
+        var p4 = new EfCoreAggregateParticipant { Name = "Dave", Surname = "Dover" };
+
+        var container = new EfCoreAggregateContainer {
+            Owner = owner,
+            Location = location,
+            Entries = [
+                new EfCoreAggregateLinkedEntry { BaseValue = 100m, AdjustmentRate = 0.1m, Participant = p3 },
+                new EfCoreAggregateLinkedEntry { BaseValue = 80m, AdjustmentRate = 0.25m, Participant = p1 },
+                new EfCoreAggregateLinkedEntry { BaseValue = 50m, AdjustmentRate = 0.2m, Participant = p2 },
+                new EfCoreAggregateLinkedEntry { BaseValue = 30m, AdjustmentRate = 0m, Participant = p4 }
+            ],
+            Transactions = [
+                new EfCoreAggregateTransaction { AppliedValue = 20m, Action = new EfCoreAggregateAction { Kind = EfCoreAggregateActionKind.Cash } },
+                new EfCoreAggregateTransaction { AppliedValue = 35m, Action = new EfCoreAggregateAction { Kind = EfCoreAggregateActionKind.Transfer } }
+            ]
+        };
+
+        db.AggregateContainers.Add(container);
+        db.SaveChanges();
+
+        var mapify = new Mapify([
+            new EfCoreAggregateLocationProfile(),
+            new EfCoreAggregatePriceProfile(),
+            new EfCoreAggregateRowProfile()
+        ]);
+
+        var mapExpr = mapify.GetRequiredMap<EfCoreAggregateContainer, EfCoreAggregateRowDto>();
+        var mapExprText = mapExpr.ToString();
+        Assert.Contains("ActionKinds = x.Transactions.Select(t => t.Action.Kind).Distinct()", mapExprText, StringComparison.Ordinal);
+        Assert.Contains("FirstThreeParticipantLabels = x.Entries.OfType().Select(e => e.Participant).Distinct().OrderBy(p => p.Surname).Take(3)", mapExprText, StringComparison.Ordinal);
+
+        var projected = db.AggregateContainers
+            .OrderBy(x => x.Id)
+            .ProjectTo<EfCoreAggregateRowDto>(mapify)
+            .Single();
+
+        Assert.Equal(owner.Id, projected.OwnerId);
+        Assert.Equal("a@b.com", projected.OwnerEmail);
+        Assert.Equal("+1-100", projected.OwnerPhoneNumber);
+        Assert.True(projected.OwnerFormalContact);
+        Assert.False(projected.OwnerFlag);
+        Assert.Equal("Zurich", projected.Location.City);
+        Assert.Equal(220m, projected.ComputedValue);
+        Assert.Equal(55m, projected.AppliedValue);
+        Assert.Equal(4, projected.ParticipantCount);
+        Assert.Equal(["Anna Able", "Bob Baker", "Cara Clark"], projected.FirstThreeParticipantLabels.ToArray());
+        Assert.Equal(["Anna Able", "Bob Baker", "Cara Clark", "Dave Dover"], projected.ParticipantLabels.ToArray());
+        Assert.Equal(2, projected.ActionKinds.Distinct().Count());
+    }
+
+    [Fact]
     public void InstanceMapify_ProjectToNamed_ShouldFallbackToNamedBaseMap_ForDerivedRuntimeElementTypes() {
         var mapify = new Mapify([
             new EfCoreProxyLikeNamedBaseProfile()

@@ -322,6 +322,17 @@ var people = await _dbContext.Persons
 - collection-to-collection materialization fallback (for example `IEnumerable<TSrc> -> IEnumerable<TDest>` reused for `List<TSrc> -> IReadOnlyCollection<TDest>`)
 - nested collection fallback at multiple depths when only element maps exist (for example `List<List<List<TSrc>>> -> List<List<List<TDest>>>` via `TSrc -> TDest`)
 
+#### Distinct + null-safety note
+
+To preserve EF/EF Core translation compatibility for correlation-sensitive subqueries, Mapify does not rewrite `Distinct(...)` call subtrees during lambda-body null-safety rewriting.
+
+Practical effect:
+
+- Top-level collection null guards (for example `x.Items == null`) are still applied.
+- Lambda null-guards inside the `Distinct` source subtree may not be injected automatically.
+
+If your selector before `Distinct` can dereference nullable members, prefer explicit null handling in the map expression (for example `x.Items == null ? ... : ...` or null-safe selectors).
+
 For named maps, both APIs follow the same rule:
 
 - `GetMap<TSource, TTarget>("Name")` may return `null` when the named map is missing

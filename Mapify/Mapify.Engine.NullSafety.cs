@@ -142,6 +142,19 @@ public partial class Mapify {
             var guardedBody = ApplyNestedNullSafetyCore(visitedBody, CreateDefaultValueExpression(visitedBody.Type));
             return Expression.Lambda<T>(guardedBody, node.Parameters);
         }
+
+        protected override Expression VisitMethodCall(MethodCallExpression node) {
+            if (IsDistinctMethod(node.Method)) {
+                return node;
+            }
+
+            return base.VisitMethodCall(node);
+        }
+
+        private static bool IsDistinctMethod(MethodInfo method)
+            => string.Equals(method.Name, nameof(Enumerable.Distinct), StringComparison.Ordinal)
+               && method.DeclaringType != null
+               && (method.DeclaringType == typeof(Enumerable) || method.DeclaringType == typeof(Queryable));
     }
 
     private sealed class NestedMemberAccessNullGuardCollector : ExpressionVisitor {

@@ -28,6 +28,14 @@ public partial class MapifyEfCoreProjectionTests {
         public DbSet<EfCoreNamedScalarLine> NamedScalarLines => Set<EfCoreNamedScalarLine>();
         public DbSet<EfCoreNamedNullableScalarContainer> NamedNullableScalarContainers => Set<EfCoreNamedNullableScalarContainer>();
         public DbSet<EfCoreNamedNullableScalarLine> NamedNullableScalarLines => Set<EfCoreNamedNullableScalarLine>();
+        public DbSet<EfCoreAggregateContainer> AggregateContainers => Set<EfCoreAggregateContainer>();
+        public DbSet<EfCoreAggregateOwner> AggregateOwners => Set<EfCoreAggregateOwner>();
+        public DbSet<EfCoreAggregateLocation> AggregateLocations => Set<EfCoreAggregateLocation>();
+        public DbSet<EfCoreAggregateEntry> AggregateEntries => Set<EfCoreAggregateEntry>();
+        public DbSet<EfCoreAggregateLinkedEntry> AggregateLinkedEntries => Set<EfCoreAggregateLinkedEntry>();
+        public DbSet<EfCoreAggregateParticipant> AggregateParticipants => Set<EfCoreAggregateParticipant>();
+        public DbSet<EfCoreAggregateTransaction> AggregateTransactions => Set<EfCoreAggregateTransaction>();
+        public DbSet<EfCoreAggregateAction> AggregateActions => Set<EfCoreAggregateAction>();
     }
 
     public class EfCoreRecursiveNode {
@@ -289,6 +297,87 @@ public partial class MapifyEfCoreProjectionTests {
         public decimal Average { get; set; }
         public decimal? Min { get; set; }
         public decimal? Max { get; set; }
+    }
+
+    public enum EfCoreAggregateActionKind {
+        Unknown = 0,
+        Cash = 1,
+        Transfer = 2
+    }
+
+    public class EfCoreAggregateContainer {
+        public int Id { get; set; }
+        public int OwnerId { get; set; }
+        public virtual EfCoreAggregateOwner Owner { get; set; } = null!;
+        public int LocationId { get; set; }
+        public virtual EfCoreAggregateLocation Location { get; set; } = null!;
+        public virtual ICollection<EfCoreAggregateEntry> Entries { get; set; } = [];
+        public virtual ICollection<EfCoreAggregateTransaction> Transactions { get; set; } = [];
+    }
+
+    public class EfCoreAggregateOwner {
+        public int Id { get; set; }
+        public string Email { get; set; } = string.Empty;
+        public string PhoneNumber { get; set; } = string.Empty;
+        public bool? FormalContact { get; set; }
+        public bool? IsStudent { get; set; }
+    }
+
+    public class EfCoreAggregateLocation {
+        public int Id { get; set; }
+        public string City { get; set; } = string.Empty;
+    }
+
+    public class EfCoreAggregateParticipant {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Surname { get; set; } = string.Empty;
+    }
+
+    public class EfCoreAggregateEntry {
+        public int Id { get; set; }
+        public int ContainerId { get; set; }
+        public virtual EfCoreAggregateContainer Container { get; set; } = null!;
+        public decimal BaseValue { get; set; }
+        public decimal AdjustmentRate { get; set; }
+    }
+
+    public class EfCoreAggregateLinkedEntry : EfCoreAggregateEntry {
+        public int ParticipantId { get; set; }
+        public virtual EfCoreAggregateParticipant Participant { get; set; } = null!;
+    }
+
+    public class EfCoreAggregateTransaction {
+        public int Id { get; set; }
+        public int ContainerId { get; set; }
+        public virtual EfCoreAggregateContainer Container { get; set; } = null!;
+        public int ActionId { get; set; }
+        public virtual EfCoreAggregateAction Action { get; set; } = null!;
+        public decimal AppliedValue { get; set; }
+    }
+
+    public class EfCoreAggregateAction {
+        public int Id { get; set; }
+        public EfCoreAggregateActionKind Kind { get; set; }
+    }
+
+    private sealed class EfCoreAggregateLocationDto {
+        public string City { get; set; } = string.Empty;
+    }
+
+    private sealed class EfCoreAggregateRowDto {
+        public int OwnerId { get; set; }
+        public string OwnerEmail { get; set; } = string.Empty;
+        public string OwnerPhoneNumber { get; set; } = string.Empty;
+        public bool OwnerFormalContact { get; set; }
+        public bool OwnerFlag { get; set; }
+        public EfCoreAggregateLocationDto Location { get; set; } = null!;
+        public decimal ComputedValue { get; set; }
+        public decimal AppliedValue { get; set; }
+        public IEnumerable<EfCoreAggregateActionKind> ActionKinds { get; set; } = [];
+        public IEnumerable<string> FirstThreeParticipantLabels { get; set; } = [];
+        public IEnumerable<string> ParticipantLabels { get; set; } = [];
+        public int ParticipantCount { get; set; }
     }
 
     private class EfCoreProxyLikeBaseSource {

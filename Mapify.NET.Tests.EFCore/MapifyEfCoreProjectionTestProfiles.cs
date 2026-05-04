@@ -322,6 +322,48 @@ public partial class MapifyEfCoreProjectionTests {
         }
     }
 
+    private sealed class EfCoreAggregateLocationProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreAggregateLocation, EfCoreAggregateLocationDto>();
+        }
+    }
+
+    private sealed class EfCoreAggregatePriceProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreAggregateEntry, decimal>("Price", e =>
+                e.BaseValue - e.BaseValue * e.AdjustmentRate
+            );
+        }
+    }
+
+    private sealed class EfCoreAggregateRowProfile : MapifyProfile {
+        protected override void Configure() {
+            CreateMap<EfCoreAggregateContainer, EfCoreAggregateRowDto>(x => new EfCoreAggregateRowDto {
+                OwnerId = x.OwnerId,
+                OwnerEmail = x.Owner.Email,
+                OwnerPhoneNumber = x.Owner.PhoneNumber,
+                OwnerFormalContact = x.Owner.FormalContact == true,
+                OwnerFlag = x.Owner.IsStudent == true,
+                Location = UseMap<EfCoreAggregateLocation, EfCoreAggregateLocationDto>(x.Location),
+                ComputedValue = x.Entries.ProjectTo<decimal>("Price").Sum(),
+                AppliedValue = x.Transactions.Sum(t => t.AppliedValue),
+                ActionKinds = x.Transactions.Select(t => t.Action.Kind).Distinct(),
+                FirstThreeParticipantLabels = x.Entries.OfType<EfCoreAggregateLinkedEntry>()
+                    .Select(e => e.Participant)
+                    .Distinct()
+                    .OrderBy(p => p.Surname)
+                    .Take(3)
+                    .Select(p => p.Name + " " + p.Surname),
+                ParticipantLabels = x.Entries.OfType<EfCoreAggregateLinkedEntry>()
+                    .Select(e => e.Participant)
+                    .Distinct()
+                    .OrderBy(p => p.Surname)
+                    .Select(p => p.Name + " " + p.Surname),
+                ParticipantCount = x.Entries.OfType<EfCoreAggregateLinkedEntry>().Select(e => e.ParticipantId).Distinct().Count()
+            });
+        }
+    }
+
     private sealed class EfCoreProxyLikeBaseProfile : MapifyProfile {
         protected override void Configure() {
             CreateMap<EfCoreProxyLikeBaseSource, EfCoreProxyLikeDto>(x => new EfCoreProxyLikeDto {
